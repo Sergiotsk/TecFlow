@@ -1,0 +1,31 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+    content: [
+        "./index.html",
+        "./src/**/*.{js,ts,jsx,tsx}",
+        "./components/**/*.{js,ts,jsx,tsx}",
+        "./*.{js,ts,jsx,tsx}"
+    ],
+    theme: {
+        extend: {
+            colors: {
+                brand: {
+                    50: 'rgb(var(--brand-50) / <alpha-value>)',
+                    100: 'rgb(var(--brand-100) / <alpha-value>)',
+                    500: 'rgb(var(--brand-500) / <alpha-value>)',
+                    600: 'rgb(var(--brand-600) / <alpha-value>)',
+                    700: 'rgb(var(--brand-700) / <alpha-value>)',
+                    900: 'rgb(var(--brand-900) / <alpha-value>)',
+                }
+            },
+            fontFamily: {
+                'tech': ['"Chakra Petch"', 'sans-serif'],
+                'orbitron': ['"Orbitron"', 'sans-serif'],
+                'rajdhani': ['"Rajdhani"', 'sans-serif'],
+                'audiowide': ['"Audiowide"', 'cursive'],
+                'russo': ['"Russo One"', 'sans-serif'],
+            }
+        },
+    },
+    plugins: [],
+}

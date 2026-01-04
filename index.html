@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TecFlow</title>
+  <link rel="icon" href="icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Audiowide&family=Chakra+Petch:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=Russo+One&display=swap"
+    rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      /* Default Blue Fallback */
+      --brand-50: 240 249 255;
+      --brand-100: 224 242 254;
+      --brand-500: 14 165 233;
+      --brand-600: 2 132 199;
+      --brand-700: 3 105 161;
+      --brand-900: 12 74 110;
+    }
+
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+
+      #printable-content,
+      #printable-content * {
+        visibility: visible;
+      }
+
+      #printable-content {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Ensure pages break correctly */
+      tr {
+        page-break-inside: avoid;
+      }
+
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+
+      html,
+      body {
+        height: auto;
+        overflow: visible;
+      }
+    }
+  </style>
+
+
+</head>
+
+<body class="bg-gray-100 text-gray-800 antialiased">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>
