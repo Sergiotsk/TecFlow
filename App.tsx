@@ -9,6 +9,8 @@ import { v4 as uuidv4 } from 'uuid';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import { ClientsManager } from './components/ClientsManager';
+import { ProductsManager } from './components/ProductsManager';
+import { Product } from './types';
 
 // Helper for ID
 const generateId = () => Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -93,8 +95,7 @@ const defaultReport: ReportData = {
   reportedIssue: '',
   diagnosis: '',
   workPerformed: '',
-  recommendations: '',
-  status: 'En Proceso'
+  recommendations: ''
 };
 
 const defaultPresets: PresetItem[] = [
@@ -159,6 +160,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showSavedDocs, setShowSavedDocs] = useState(false);
   const [showClients, setShowClients] = useState(false);
+  const [showProductsManager, setShowProductsManager] = useState(false);
 
   // Initialize IDs on Load
   useEffect(() => {
@@ -208,6 +210,8 @@ const App: React.FC = () => {
 
   // AI Loading States
   const [isImprovingDiagnosis, setIsImprovingDiagnosis] = useState(false);
+  const [isImprovingReportIssue, setIsImprovingReportIssue] = useState(false);
+  const [isImprovingWorkPerformed, setIsImprovingWorkPerformed] = useState(false);
 
   // Derived State for Categories
   const availableCategories = React.useMemo(() => {
@@ -617,15 +621,26 @@ const App: React.FC = () => {
 
   const improveText = async (
     text: string,
-    context: 'diagnosis' | 'professional_note',
+    context: 'technical_diagnosis' | 'professional_note' | 'technical_issue' | 'work_report',
     setter: (val: string) => void,
     loadingSetter: (val: boolean) => void
   ) => {
     if (!text.trim()) return;
     loadingSetter(true);
-    const polished = await polishText(text, context);
-    setter(polished);
-    loadingSetter(false);
+    try {
+      const polished = await polishText(text, context);
+      setter(polished);
+    } catch (error: any) {
+      if (error.message === 'QUOTA_EXCEEDED') {
+        alert("⚠️ Límite de uso gratuito excedido (IA).\n\nHas alcanzado el límite de solicitudes por minuto del plan actual. Por favor espera un momento.");
+      } else if (error.message === 'API_KEY_MISSING') {
+        alert("⚠️ Función de IA no disponible.\n\nLa API Key del sistema no está configurada. Contacte al soporte.");
+        console.error("AI Error:", error);
+        alert(`⚠️ No se pudo mejorar el texto.\nError: ${error.message}\n\nVerifica tu conexión a internet o tu API Key.`);
+      }
+    } finally {
+      loadingSetter(false);
+    }
   };
 
   // --- RENDER HELPERS ---
@@ -778,6 +793,32 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [mode === 'quote' ? quote.clientName : report.clientName, allClients, mode]);
 
+  // --- OPTIMIZATION FOR TYPING PERFORMANCE ---
+  // We use a debounced version of quote/report data for the PrintableDocument preview.
+  // This prevents the heavy PDF preview component from re-rendering on every single keystroke,
+  // which was causing the UI to freeze/lag when typing notes or searching clients.
+
+  const [previewQuote, setPreviewQuote] = useState<QuoteData>(quote);
+  const [previewReport, setPreviewReport] = useState<ReportData>(report);
+
+  // Sync Preview with real state after 500ms of inactivity
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPreviewQuote(quote);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [quote]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPreviewReport(report);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [report]);
+
+
+  // Determine which data to pass to preview based on mode
+  // Note: We use the DEBOUNCED versions (previewQuote/previewReport) here!
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
       {/* Settings Modal */}
@@ -821,11 +862,32 @@ const App: React.FC = () => {
             if ('items' in doc) {
               setMode('quote');
               setQuote(doc as QuoteData);
+              // Update preview immediately on load (no delay needed)
+              setPreviewQuote(doc as QuoteData);
             } else {
               setMode('report');
               setReport(doc as ReportData);
+              setPreviewReport(doc as ReportData);
             }
             setShowClients(false);
+          }}
+        />
+      )}
+
+      {/* Products Manager Modal */}
+      {showProductsManager && (
+        <ProductsManager
+          onClose={() => setShowProductsManager(false)}
+          products={presets}
+          onUpdateProducts={(updated) => setPresets(updated)}
+          onSelectProduct={(product) => {
+            // If we are in quote mode, add the product to the quote
+            if (mode === 'quote') {
+              handleAddFromPreset(product);
+              alert(`Agregado: ${product.description}`);
+            } else {
+              alert("Selecciona un producto para añadirlo al presupuesto. (Modo actual: Informe)");
+            }
           }}
         />
       )}
@@ -874,23 +936,18 @@ const App: React.FC = () => {
                 <i className="fas fa-save mr-1"></i>
                 <span className="text-sm">Guardar</span>
               </button>
-              <button
-                onClick={() => setShowSavedDocs(true)}
-                className="text-gray-300 hover:text-white hover:bg-gray-700 px-3 py-2 rounded-md transition-colors"
-                title="Ver documentos guardados"
-              >
-                <i className="fas fa-folder-open mr-1"></i>
-                <span className="text-sm">Guardados</span>
+
+              <button onClick={() => setShowSavedDocs(true)} className="text-gray-300 hover:text-white hover:bg-gray-700 px-3 py-2 rounded-md transition-colors" title="Historial">
+                <i className="fas fa-history mr-1"></i>
+                <span className="text-sm">Historial</span>
               </button>
-
-              <div className="h-6 w-px bg-gray-700 mx-2"></div>
-
-              <button
-                onClick={() => setShowClients(true)}
-                className="text-gray-300 hover:text-white hover:bg-gray-700 px-3 py-2 rounded-md transition-colors"
-              >
+              <button onClick={() => setShowClients(true)} className="text-gray-300 hover:text-white hover:bg-gray-700 px-3 py-2 rounded-md transition-colors" title="Clientes">
                 <i className="fas fa-users mr-1"></i>
                 <span className="text-sm">Clientes</span>
+              </button>
+              <button onClick={() => setShowProductsManager(true)} className="text-gray-300 hover:text-white hover:bg-gray-700 px-3 py-2 rounded-md transition-colors" title="Inventario">
+                <i className="fas fa-boxes mr-1"></i>
+                <span className="text-sm">Inventario</span>
               </button>
 
               <button onClick={() => setShowSettings(true)} className="text-gray-300 hover:text-white">
@@ -1052,31 +1109,38 @@ const App: React.FC = () => {
                           />
                         </div>
                         <button onClick={handleCreatePreset} className="bg-brand-600 text-white text-xs py-1 rounded hover:bg-brand-700">
-                          Guardar Preset
+                          Crear y Usar
                         </button>
                       </div>
                     )}
 
-                    {presets.length > 0 && (
-                      <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                    {/* Presets List (Tags) */}
+                    {!showPresetForm && (
+                      <div className="flex flex-wrap gap-2">
                         {presets
-                          .filter(p => selectedCategory === 'all' || p.category === selectedCategory)
+                          .filter(p => {
+                            // Logic: If "All" is selected, only show Favorites. 
+                            // To see everything, user should use the Inventory Manager or select a specific category.
+                            // Or, we can just show favorites always unless searching? 
+                            // Let's stick to User Request: "solo este en frecuentes una lista corta de los mas usados"
+                            if (selectedCategory === 'all') return p.isFavorite; // Only favorites in "All" view
+                            return p.category === selectedCategory; // Show all in specific category
+                          })
                           .map(p => (
-                            <div key={p.id} className="group relative inline-flex">
+                            <div
+                              key={p.id}
+                              className="bg-white border text-gray-600 text-xs px-2 py-1 rounded cursor-pointer hover:bg-brand-50 hover:border-brand-200 hover:text-brand-700 transition-colors flex items-center shadow-sm"
+                              onClick={() => handleAddFromPreset(p)}
+                            >
+                              <i className={`fas fa-${p.type === 'service' ? 'wrench' : 'box'} mr-1.5 text-[10px]`}></i>
+                              <span className="font-medium">{p.description.substring(0, 30)}{p.description.length > 30 ? '...' : ''}</span>
+                              <span className="ml-2 font-bold text-gray-400 text-[10px]">${p.unitPrice}</span>
                               <button
-                                onClick={() => handleAddFromPreset(p)}
-                                className={`text-xs px-3 py-1 rounded-full transition-colors border flex items-center gap-1 ${p.type === 'service'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'
-                                  : 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100'
-                                  }`}
-                                title={`${p.category.toUpperCase()} - ${p.description}`}
-                              >
-                                <i className={`fas ${p.type === 'service' ? 'fa-wrench' : 'fa-box'} opacity-50`}></i>
-                                {p.description} <span className="opacity-70">(${p.unitPrice})</span>
-                              </button>
-                              <button
-                                onClick={() => handleDeletePreset(p.id)}
-                                className="absolute -top-1 -right-1 hidden group-hover:flex bg-red-500 text-white w-4 h-4 rounded-full items-center justify-center text-[10px]"
+                                className="ml-2 text-gray-300 hover:text-red-500"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePreset(p.id);
+                                }}
                               >
                                 &times;
                               </button>
@@ -1119,13 +1183,7 @@ const App: React.FC = () => {
                       {isImprovingNotes ? 'Mejorando...' : 'Mejorar con AI'}
                     </button>
                   </label>
-                  <textarea
-                    rows={3}
-                    value={quote.notes}
-                    onChange={(e) => setQuote({ ...quote, notes: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
-                    placeholder="Ej: Pago 50% anticipado..."
-                  />
+                  <textarea rows={3} value={quote.notes} onChange={(e) => setQuote({ ...quote, notes: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
                 </div>
 
               </div>
@@ -1159,10 +1217,10 @@ const App: React.FC = () => {
                   <div className="relative">
                     <input
                       type="text"
+                      placeholder="Nombre del Cliente"
                       value={report.clientName}
                       onChange={(e) => handleClientInputChange(e.target.value)}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
-                      placeholder="Buscar Cliente..."
                       onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
                       onFocus={() => report.clientName && handleClientInputChange(report.clientName)}
                       autoComplete="off"
@@ -1186,60 +1244,75 @@ const App: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">Equipo / Dispositivo</label>
-                    <input type="text" value={report.deviceType} onChange={(e) => setReport({ ...report, deviceType: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" placeholder="Ej: Notebook HP" />
+                    <label className="block text-xs font-medium text-gray-700">Equipo</label>
+                    <input type="text" placeholder="Ej: Notebook Dell" value={report.deviceType} onChange={(e) => setReport({ ...report, deviceType: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">Nº Serie / Modelo</label>
-                    <input type="text" value={report.serialNumber} onChange={(e) => setReport({ ...report, serialNumber: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                    <label className="block text-xs font-medium text-gray-700">Nº Serie (S/N)</label>
+                    <input type="text" value={report.serialNumber || ''} onChange={(e) => setReport({ ...report, serialNumber: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700">Problema Reportado</label>
-                  <textarea rows={2} value={report.reportedIssue} onChange={(e) => setReport({ ...report, reportedIssue: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                  <label className="block text-xs font-medium text-gray-700 flex justify-between">
+                    <span>Problema Reportado (Falla)</span>
+                    <button
+                      onClick={() => improveText(report.reportedIssue, 'technical_issue', (val) => setReport({ ...report, reportedIssue: val }), setIsImprovingReportIssue)}
+                      className="text-brand-600 hover:text-brand-800 text-xs flex items-center"
+                      disabled={isImprovingReportIssue}
+                    >
+                      <i className={`fas fa-magic mr-1 ${isImprovingReportIssue ? 'animate-spin' : ''}`}></i>
+                      Mejorar
+                    </button>
+                  </label>
+                  <textarea rows={3} value={report.reportedIssue} onChange={(e) => setReport({ ...report, reportedIssue: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-gray-700 flex justify-between">
                     <span>Diagnóstico Técnico</span>
                     <button
-                      onClick={() => improveText(report.diagnosis, 'diagnosis', (val) => setReport({ ...report, diagnosis: val }), setIsImprovingDiagnosis)}
+                      onClick={() => improveText(report.diagnosis, 'technical_diagnosis', (val) => setReport({ ...report, diagnosis: val }), setIsImprovingDiagnosis)}
                       className="text-brand-600 hover:text-brand-800 text-xs flex items-center"
                       disabled={isImprovingDiagnosis}
                     >
                       <i className={`fas fa-magic mr-1 ${isImprovingDiagnosis ? 'animate-spin' : ''}`}></i>
-                      {isImprovingDiagnosis ? 'Mejorando...' : 'Mejorar con AI'}
+                      Mejorar
                     </button>
                   </label>
-                  <textarea
-                    rows={4}
-                    value={report.diagnosis}
-                    onChange={(e) => setReport({ ...report, diagnosis: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
-                    placeholder="Describa el fallo técnico encontrado..."
-                  />
+                  <textarea rows={4} value={report.diagnosis} onChange={(e) => setReport({ ...report, diagnosis: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700">Trabajo Realizado / Materiales</label>
-                  <textarea rows={3} value={report.workPerformed} onChange={(e) => setReport({ ...report, workPerformed: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700">Recomendaciones</label>
-                  <textarea rows={2} value={report.recommendations} onChange={(e) => setReport({ ...report, recommendations: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                  <label className="block text-xs font-medium text-gray-700 flex justify-between">
+                    <span>Trabajo Realizado / Materiales</span>
+                    <button
+                      onClick={() => improveText(report.workPerformed, 'work_report', (val) => setReport({ ...report, workPerformed: val }), setIsImprovingWorkPerformed)}
+                      className="text-brand-600 hover:text-brand-800 text-xs flex items-center"
+                      disabled={isImprovingWorkPerformed}
+                    >
+                      <i className={`fas fa-magic mr-1 ${isImprovingWorkPerformed ? 'animate-spin' : ''}`}></i>
+                      Mejorar
+                    </button>
+                  </label>
+                  <textarea rows={4} value={report.workPerformed} onChange={(e) => setReport({ ...report, workPerformed: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-gray-700">Estado Final</label>
-                  <select value={report.status} onChange={(e) => setReport({ ...report, status: e.target.value as any })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white">
-                    <option value="En Proceso">En Proceso</option>
-                    <option value="Reparado">Reparado</option>
+                  <select
+                    value={report.status}
+                    onChange={(e) => setReport({ ...report, status: e.target.value as any })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white font-medium"
+                  >
+                    <option value="En Revisión">En Revisión</option>
                     <option value="Pendiente de Repuesto">Pendiente de Repuesto</option>
+                    <option value="Reparado">Reparado</option>
                     <option value="Sin Solución">Sin Solución</option>
+                    <option value="Entregado">Entregado</option>
                   </select>
                 </div>
+
               </div>
             )}
           </div>
@@ -1269,8 +1342,8 @@ const App: React.FC = () => {
             <PrintableDocument
               mode={mode}
               business={business}
-              quoteData={quote}
-              reportData={report}
+              quoteData={previewQuote}
+              reportData={previewReport}
             />
           </div>
         </section>

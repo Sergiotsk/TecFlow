@@ -1,4 +1,4 @@
-export type DocType = 'quote' | 'report';
+export type DocType = 'quote' | 'report' | 'invoice';
 
 export interface BusinessSettings {
   name: string;
@@ -34,13 +34,19 @@ export interface LineItem {
 
 export type PresetCategory = string;
 
-export interface PresetItem {
+export interface Product {
   id: string;
   type: ItemType;
   category: PresetCategory;
   description: string;
   unitPrice: number;
+  code?: string; // SKU or internal code
+  stock?: number;
+  isFavorite?: boolean;
 }
+
+// Alias for backward compatibility, but effectively replaces PresetItem
+export type PresetItem = Product;
 
 export interface QuoteData {
   id: string;
@@ -69,8 +75,16 @@ export interface ReportData {
   diagnosis: string;
   workPerformed: string;
   recommendations: string;
-  status: 'Reparado' | 'En Proceso' | 'Sin Solución' | 'Pendiente de Repuesto';
   locked?: boolean;
+}
+
+export type InvoiceType = 'A' | 'B' | 'C' | 'M';
+
+export interface InvoiceData extends QuoteData {
+  invoiceType: InvoiceType;
+  cae?: string;
+  caeExpiration?: string;
+  saleCondition: 'Contado' | 'Cta Cte' | 'Tarjeta';
 }
 
 export interface SavedQuote extends QuoteData {
