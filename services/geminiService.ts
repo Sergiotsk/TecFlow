@@ -53,3 +53,50 @@ export const polishText = async (
     throw error;
   }
 };
+
+export const parseProductList = async (base64Data: string, mimeType: string): Promise<any[]> => {
+  if (!apiKey) throw new Error("API_KEY_MISSING");
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    const prompt = `Analiza esta imagen o documento que contiene una lista de precios o inventario.
+    Extrae CADA ítem encontrado en una lista JSON estructurada.
+    Para cada ítem, intenta identificar:
+    - 'description': Nombre o descripción del producto.
+    - 'unitPrice': Precio unitario (numérico, sin símbolos).
+    - 'code': Código, SKU o ID del producto si existe.
+    - 'stock': Cantidad disponible si existe (numérico).
+    
+    Si no encuentras código o stock, déjalos vacíos o en 0.
+    IMPORTANTE: Devuelve SOLAMENTE el array JSON válido, sin bloques de código markdown, sin texto adicional.`;
+
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: mimeType,
+      },
+    };
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    const text = response.text();
+
+    // Improved JSON extraction: find the first '[' and the last ']'
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+
+    if (start === -1 || end === -1) {
+      throw new Error("No JSON array found in response");
+    }
+
+    const jsonStr = text.substring(start, end + 1);
+
+    return JSON.parse(jsonStr);
+
+  } catch (error: any) {
+    console.error("Error parsing product list with Gemini:", error);
+    if (error.message?.includes('429')) throw new Error("QUOTA_EXCEEDED");
+    throw error;
+  }
+};

@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import html2pdf from 'html2pdf.js';
 import { ClientsManager } from './components/ClientsManager';
 import { ProductsManager } from './components/ProductsManager';
+import UpdateNotification from './components/UpdateNotification';
 import { Product } from './types';
 
 // Helper for ID
@@ -201,9 +202,22 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : ['General', 'Computación', 'Electricidad'];
   });
 
+  const [activeSupplier, setActiveSupplier] = useState<string>('');
+
+  const [marginSettings, setMarginSettings] = useState<{ default: number, suppliers: Record<string, number>, frozenSuppliers: string[] }>(() => {
+    const saved = localStorage.getItem('marginSettings');
+    const parsed = saved ? JSON.parse(saved) : {};
+    return {
+      default: parsed.default || 30,
+      suppliers: parsed.suppliers || {},
+      frozenSuppliers: parsed.frozenSuppliers || []
+    };
+  });
+
   useEffect(() => {
     localStorage.setItem('categories', JSON.stringify(categories));
-  }, [categories]);
+    localStorage.setItem('marginSettings', JSON.stringify(marginSettings));
+  }, [categories, marginSettings]);
   const [showPresetForm, setShowPresetForm] = useState(false);
   const [newPreset, setNewPreset] = useState<Omit<PresetItem, 'id'>>({ type: 'service', category: 'computacion', description: '', unitPrice: 0 });
   const [selectedCategory, setSelectedCategory] = useState<PresetCategory | 'all'>('all');
@@ -877,9 +891,15 @@ const App: React.FC = () => {
       {/* Products Manager Modal */}
       {showProductsManager && (
         <ProductsManager
-          onClose={() => setShowProductsManager(false)}
+          onClose={() => {
+            setShowProductsManager(false);
+            setActiveSupplier(''); // Reset active supplier on close
+          }}
           products={presets}
           onUpdateProducts={(updated) => setPresets(updated)}
+          initialSupplier={activeSupplier}
+          marginSettings={marginSettings}
+          onUpdateMarginSettings={setMarginSettings}
           onSelectProduct={(product) => {
             // If we are in quote mode, add the product to the quote
             if (mode === 'quote') {
@@ -1046,20 +1066,61 @@ const App: React.FC = () => {
                   {/* PRESETS Quick Add */}
                   <div className="mb-4">
                     {/* Filter Tabs */}
+                    {/* Filter Tabs */}
                     {!showPresetForm && (
-                      <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-hide">
-                        {filterCategories.map(cat => (
-                          <button
-                            key={cat}
-                            onClick={() => setSelectedCategory(cat)}
-                            className={`px-3 py-1 rounded-full text-xs whitespace-nowrap border transition-colors ${selectedCategory === cat
-                              ? 'bg-gray-800 text-white border-gray-800'
-                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                              }`}
-                          >
-                            {cat === 'all' ? 'Todos' : cat.charAt(0).toUpperCase() + cat.slice(1)}
-                          </button>
-                        ))}
+                      <div className="mb-3">
+                        {/* Suppliers List (Buttons) */}
+                        {(() => {
+                          const suppliers = Array.from(new Set(presets.map(p => p.supplier).filter(Boolean))) as string[];
+                          const visibleSuppliers = suppliers.filter(s => !marginSettings.frozenSuppliers?.includes(s));
+
+                          if (visibleSuppliers.length > 0) {
+                            return (
+                              <div className="mb-2">
+                                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                                  {visibleSuppliers.map(sup => {
+                                    // Calculate last update
+                                    const lastUpdate = presets
+                                      .filter(p => p.supplier === sup && p.lastUpdated)
+                                      .reduce((max, p) => p.lastUpdated! > max ? p.lastUpdated! : max, '');
+
+                                    return (
+                                      <button
+                                        key={sup}
+                                        onClick={() => {
+                                          setActiveSupplier(sup);
+                                          setShowProductsManager(true);
+                                        }}
+                                        className="px-3 py-1 rounded-full text-xs whitespace-nowrap border bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 transition-colors flex flex-col items-start leading-none gap-0.5 h-auto min-h-[32px] justify-center"
+                                      >
+                                        <span className="flex items-center gap-1 font-bold">
+                                          <i className="fas fa-truck text-[10px]"></i> {sup}
+                                        </span>
+                                        {lastUpdate && <span className="text-[9px] opacity-70 ml-4 font-mono">{new Date(lastUpdate).toLocaleDateString()}</span>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                          {filterCategories.map(cat => (
+                            <button
+                              key={cat}
+                              onClick={() => setSelectedCategory(cat)}
+                              className={`px-3 py-1 rounded-full text-xs whitespace-nowrap border transition-colors ${selectedCategory === cat
+                                ? 'bg-gray-800 text-white border-gray-800'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                                }`}
+                            >
+                              {cat === 'all' ? 'Todos' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -1119,10 +1180,7 @@ const App: React.FC = () => {
                       <div className="flex flex-wrap gap-2">
                         {presets
                           .filter(p => {
-                            // Logic: If "All" is selected, only show Favorites. 
-                            // To see everything, user should use the Inventory Manager or select a specific category.
-                            // Or, we can just show favorites always unless searching? 
-                            // Let's stick to User Request: "solo este en frecuentes una lista corta de los mas usados"
+                            // 2. Category Logic
                             if (selectedCategory === 'all') return p.isFavorite; // Only favorites in "All" view
                             return p.category === selectedCategory; // Show all in specific category
                           })
@@ -1133,7 +1191,10 @@ const App: React.FC = () => {
                               onClick={() => handleAddFromPreset(p)}
                             >
                               <i className={`fas fa-${p.type === 'service' ? 'wrench' : 'box'} mr-1.5 text-[10px]`}></i>
-                              <span className="font-medium">{p.description.substring(0, 30)}{p.description.length > 30 ? '...' : ''}</span>
+                              <div className="flex flex-col">
+                                <span className="font-medium truncate max-w-[150px]">{p.description}</span>
+                                {p.supplier && <span className="text-[9px] text-gray-400 uppercase">{p.supplier}</span>}
+                              </div>
                               <span className="ml-2 font-bold text-gray-400 text-[10px]">${p.unitPrice}</span>
                               <button
                                 className="ml-2 text-gray-300 hover:text-red-500"
@@ -1349,7 +1410,10 @@ const App: React.FC = () => {
         </section>
 
       </main>
-    </div>
+
+      {/* Auto Update Notification */}
+      <UpdateNotification />
+    </div >
   );
 };
 

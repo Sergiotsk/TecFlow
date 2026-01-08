@@ -22,6 +22,15 @@ export interface ElectronAPI {
 
     // Check if running in Electron
     isElectron: boolean;
+
+    // Auto Updater
+    checkUpdates: () => void;
+    restartAndInstall: () => void;
+    onUpdateStatus: (callback: (status: string) => void) => void;
+    onUpdateAvailable: (callback: (info: any) => void) => void;
+    onUpdateProgress: (callback: (progress: any) => void) => void;
+    onUpdateDownloaded: (callback: (info: any) => void) => void;
+    onUpdateError: (callback: (error: string) => void) => void;
 }
 
 declare global {

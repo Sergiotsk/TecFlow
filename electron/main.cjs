@@ -240,3 +240,51 @@ ipcMain.handle('save-documents', async (event, documents) => {
 ipcMain.handle('load-documents', async () => {
     return { success: true, documents: readJsonFile('documents.json') };
 });
+
+// --- AUTO UPDATER ---
+const { autoUpdater } = require('electron-updater');
+
+// Configure autoUpdater
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+// Event forwarding to renderer
+autoUpdater.on('checking-for-update', () => {
+    if (mainWindow) mainWindow.webContents.send('update-status', 'checking');
+});
+
+autoUpdater.on('update-available', (info) => {
+    if (mainWindow) mainWindow.webContents.send('update-available', info);
+});
+
+autoUpdater.on('update-not-available', (info) => {
+    // Optional: send 'uptodate' status if triggered manually
+    if (mainWindow) mainWindow.webContents.send('update-status', 'uptodate');
+});
+
+autoUpdater.on('error', (err) => {
+    if (mainWindow) mainWindow.webContents.send('update-error', err.toString());
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+    if (mainWindow) mainWindow.webContents.send('update-progress', progressObj);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+    if (mainWindow) mainWindow.webContents.send('update-downloaded', info);
+});
+
+// IPC Handlers for Updater
+ipcMain.on('check-updates', () => {
+    if (process.env.NODE_ENV === 'development') {
+        // Skip in dev or mock it
+        console.log('Skipping update check in dev mode');
+        return;
+    }
+    autoUpdater.checkForUpdatesAndNotify();
+});
+
+ipcMain.on('restart-app', () => {
+    autoUpdater.quitAndInstall();
+});
+

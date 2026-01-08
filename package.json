@@ -1,7 +1,8 @@
 {
   "name": "tecflow",
   "private": true,
-  "version": "1.2.3",
+  "version": "1.2.4",
+  "type": "module",
   "description": "Aplicación de escritorio para gestionar flujos de trabajo técnicos",
   "author": "Sefatek",
   "main": "electron/main.cjs",
@@ -22,6 +23,13 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Sergiotsk",
+        "repo": "TecFlow"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -58,6 +66,7 @@
     "@google/generative-ai": "^0.24.1",
     "7zip-bin": "^5.2.0",
     "7zip-bin-win": "^2.2.0",
+    "electron-updater": "^6.7.3",
     "html2pdf.js": "^0.12.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

@@ -10,6 +10,11 @@ export interface BusinessSettings {
   brandColor: string; // Hex code
   defaultFooter: string;
   finalMessage: string; // Message at the end of the document
+
+  // Inventory Settings
+  defaultMarkup?: number; // Global percentage profit margin
+  supplierMarkups?: Record<string, number>; // Specific margins per supplier
+  frozenSuppliers?: string[]; // Suppliers that are hidden/inactive
 }
 
 export interface Client {
@@ -43,6 +48,9 @@ export interface Product {
   code?: string; // SKU or internal code
   stock?: number;
   isFavorite?: boolean;
+  supplier?: string;
+  costPrice?: number;
+  lastUpdated?: string; // ISO timestamp
 }
 
 // Alias for backward compatibility, but effectively replaces PresetItem

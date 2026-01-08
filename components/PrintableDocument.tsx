@@ -26,7 +26,7 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
     const sectionSubtotal = items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
 
     return (
-      <div className="mb-4 break-inside-avoid">
+      <div className="mb-4">
         <h3 className="text-xs font-bold uppercase text-gray-500 mb-1.5 border-b border-gray-300 pb-0.5">{title}</h3>
         <table className="w-full text-left border-collapse table-fixed">
           <thead>
@@ -66,7 +66,7 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
   };
 
   return (
-    <div id="actual-receipt" className="bg-white w-full h-full shadow-lg print:shadow-none p-6 md:p-8 print:p-0 relative flex flex-col text-sm text-gray-800 box-border mx-auto aspect-[1/1.4142] max-w-[210mm] min-h-[297mm] print:aspect-auto print:max-w-none print:w-full print:h-auto">
+    <div id="actual-receipt" className="bg-white w-full shadow-lg print:shadow-none p-6 md:p-8 print:p-0 relative flex flex-col text-sm text-gray-800 box-border mx-auto max-w-[210mm] min-h-[297mm] print:min-h-[95vh] print:aspect-auto print:max-w-none print:w-full print:h-auto">
       {/* Header */}
       <header className="flex justify-between items-start border-b-2 border-brand-500 pb-4 mb-4">
         <div className="flex items-center space-x-4">

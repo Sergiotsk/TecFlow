@@ -24,5 +24,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadDocuments: () => ipcRenderer.invoke('load-documents'),
 
     // Check if running in Electron
-    isElectron: true
+    isElectron: true,
+
+    // Auto Updater
+    checkUpdates: () => ipcRenderer.send('check-updates'),
+    restartAndInstall: () => ipcRenderer.send('restart-app'),
+    onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, status) => callback(status)),
+    onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, info) => callback(info)),
+    onUpdateProgress: (callback) => ipcRenderer.on('update-progress', (event, progress) => callback(progress)),
+    onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', (event, info) => callback(info)),
+    onUpdateError: (callback) => ipcRenderer.on('update-error', (event, error) => callback(error))
 });
