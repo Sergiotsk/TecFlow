@@ -1,7 +1,7 @@
 {
   "name": "tecflow",
   "private": true,
-  "version": "1.2.4",
+  "version": "1.2.5",
   "type": "module",
   "description": "Aplicación de escritorio para gestionar flujos de trabajo técnicos",
   "author": "Sefatek",
@@ -27,7 +27,8 @@
       {
         "provider": "github",
         "owner": "Sergiotsk",
-        "repo": "TecFlow"
+        "repo": "TecFlow",
+        "releaseType": "release"
       }
     ],
     "files": [
@@ -40,7 +41,8 @@
         "nsis"
       ],
       "icon": "public/icon.png",
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [

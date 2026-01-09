@@ -425,6 +425,52 @@ export const ClientsManager: React.FC<ClientsManagerProps> = ({ onClose, onSelec
         event.target.value = '';
     };
 
+    // Export CSV Handler
+    const handleExportCSV = async () => {
+        if (clients.length === 0) {
+            alert('No hay clientes para exportar.');
+            return;
+        }
+
+        const headers = ['Nombre', 'Teléfono', 'Email', 'Dirección', 'CUIT/DNI', 'Notas'];
+        const csvContent = [
+            headers.join(','),
+            ...clients.map(c => {
+                const row = [
+                    c.name,
+                    c.phone,
+                    c.email,
+                    c.address,
+                    c.taxId,
+                    c.notes ? c.notes.replace(/\n/g, ' ') : ''
+                ];
+                // Escape quotes and wrap in quotes
+                return row.map(field => `"${(field || '').replace(/"/g, '""')}"`).join(',');
+            })
+        ].join('\n');
+
+        if (window.electronAPI?.exportData) {
+            const dateStr = new Date().toISOString().split('T')[0];
+            const result = await window.electronAPI.exportData(`clientes_tecflow_${dateStr}.csv`, csvContent);
+            if (result.success) {
+                alert('Exportación completada exitosamente.');
+            } else if (!result.canceled) {
+                alert('Error al exportar: ' + result.error);
+            }
+        } else {
+            // Fallback for web (create blob and download)
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'clientes_tecflow_export.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white w-full max-w-6xl h-[85vh] rounded-xl shadow-2xl flex overflow-hidden animate-fade-in">
@@ -449,13 +495,14 @@ export const ClientsManager: React.FC<ClientsManagerProps> = ({ onClose, onSelec
                         <div className="flex gap-2 mt-3">
                             <button
                                 onClick={startNew}
-                                className="flex-1 bg-brand-600 text-white py-2 rounded-lg text-xs font-medium hover:bg-brand-700 transition flex items-center justify-center"
+                                className="bg-brand-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-brand-700 transition flex items-center justify-center"
+                                title="Nuevo Cliente"
                             >
-                                <i className="fas fa-plus mr-1"></i> Nuevo
+                                <i className="fas fa-plus"></i>
                             </button>
 
-                            <label className="flex-1 bg-green-600 text-white py-2 rounded-lg text-xs font-medium hover:bg-green-700 transition flex items-center justify-center cursor-pointer">
-                                <i className="fab fa-google mr-1"></i> Importar CSV
+                            <label className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-lg text-xs font-medium hover:bg-gray-50 transition flex items-center justify-center cursor-pointer shadow-sm">
+                                <i className="fab fa-google mr-1 text-green-600"></i> Importar
                                 <input
                                     type="file"
                                     accept=".csv"
@@ -463,6 +510,14 @@ export const ClientsManager: React.FC<ClientsManagerProps> = ({ onClose, onSelec
                                     onChange={handleImportGoogleContacts}
                                 />
                             </label>
+
+                            <button
+                                onClick={handleExportCSV}
+                                className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium hover:bg-gray-50 transition flex items-center justify-center shadow-sm"
+                                title="Exportar a CSV"
+                            >
+                                <i className="fas fa-file-export text-blue-600"></i>
+                            </button>
                         </div>
 
                         {lastImportDate && (
