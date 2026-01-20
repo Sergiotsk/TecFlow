@@ -207,6 +207,12 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
               <h3 className="text-sm font-bold text-brand-600 uppercase border-b border-brand-200 mb-2 pb-1">Recomendaciones</h3>
               <p className="text-gray-700 whitespace-pre-wrap">{reportData.recommendations || 'Sin recomendaciones adicionales.'}</p>
             </div>
+            {reportData.notes && (
+              <div className="break-inside-avoid">
+                <h3 className="text-sm font-bold text-brand-600 uppercase border-b border-brand-200 mb-2 pb-1">Observaciones</h3>
+                <p className="text-gray-700 whitespace-pre-wrap">{reportData.notes}</p>
+              </div>
+            )}
           </div>
         )}
 

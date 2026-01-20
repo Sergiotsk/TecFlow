@@ -143,15 +143,31 @@ export const ClientsManager: React.FC<ClientsManagerProps> = ({ onClose, onSelec
         setIsEditing(false);
     };
 
-    // Filter Clients
-    const filteredClients = clients.filter(c =>
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.taxId.includes(searchTerm)
-    );
+    // Debounced Search Term to prevent lagging on typing
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
-    // Get Client History with Flexible Matching
-    const clientDocuments = selectedClient
-        ? documents.filter(doc => {
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    // Filter Clients (Uses Debounced Term)
+    const filteredClients = React.useMemo(() => {
+        if (!debouncedSearchTerm) return clients;
+        const lowerTerm = debouncedSearchTerm.toLowerCase();
+        return clients.filter(c =>
+            c.name.toLowerCase().includes(lowerTerm) ||
+            c.taxId.includes(lowerTerm)
+        );
+    }, [clients, debouncedSearchTerm]);
+
+    // Optimize Client History Calculation
+    const clientDocuments = React.useMemo(() => {
+        if (!selectedClient) return [];
+
+        return documents.filter(doc => {
             const docName = ('clientName' in doc ? doc.clientName : '') || '';
             const docId = ('clientId' in doc ? doc.clientId : '') || '';
 
@@ -198,8 +214,8 @@ export const ClientsManager: React.FC<ClientsManagerProps> = ({ onClose, onSelec
                 (docId.trim() === selectedClient.taxId.trim());
 
             return nameMatch || idMatch;
-        })
-        : [];
+        });
+    }, [selectedClient, documents]);
 
     // Google Import Handler
     const handleImportGoogleContacts = (event: React.ChangeEvent<HTMLInputElement>) => {
