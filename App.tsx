@@ -11,6 +11,8 @@ import html2pdf from 'html2pdf.js';
 import { ClientsManager } from './components/ClientsManager';
 import { ProductsManager } from './components/ProductsManager';
 import UpdateNotification from './components/UpdateNotification';
+import { DebouncedTextarea } from './components/DebouncedTextarea';
+import { DebouncedInput } from './components/DebouncedInput';
 import { Product } from './types';
 
 // Helper for ID
@@ -96,7 +98,8 @@ const defaultReport: ReportData = {
   reportedIssue: '',
   diagnosis: '',
   workPerformed: '',
-  recommendations: ''
+  recommendations: '',
+  notes: ''
 };
 
 const defaultPresets: PresetItem[] = [
@@ -690,12 +693,12 @@ const App: React.FC = () => {
             <div key={item.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
               <div className="mb-2">
                 <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Descripción (Max 500 caract.)</label>
-                <input
+                <DebouncedInput
                   type="text"
                   maxLength={500}
                   placeholder={`Descripción del ${isService ? 'servicio' : 'material'}`}
                   value={item.description}
-                  onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                  onDebouncedChange={(val) => handleItemChange(item.id, 'description', val)}
                   className="w-full rounded-md border-gray-300 text-sm p-2 border focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none bg-white placeholder-gray-400"
                 />
               </div>
@@ -1244,7 +1247,7 @@ const App: React.FC = () => {
                       {isImprovingNotes ? 'Mejorando...' : 'Mejorar con AI'}
                     </button>
                   </label>
-                  <textarea rows={3} value={quote.notes} onChange={(e) => setQuote({ ...quote, notes: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
+                  <DebouncedTextarea rows={3} value={quote.notes} onDebouncedChange={(val) => setQuote({ ...quote, notes: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                 </div>
 
               </div>
@@ -1276,11 +1279,11 @@ const App: React.FC = () => {
                 <div>
                   <label className="block text-xs font-medium text-gray-700">Cliente</label>
                   <div className="relative">
-                    <input
+                    <DebouncedInput
                       type="text"
                       placeholder="Nombre del Cliente"
                       value={report.clientName}
-                      onChange={(e) => handleClientInputChange(e.target.value)}
+                      onDebouncedChange={(val) => handleClientInputChange(val)}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
                       onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
                       onFocus={() => report.clientName && handleClientInputChange(report.clientName)}
@@ -1326,7 +1329,7 @@ const App: React.FC = () => {
                       Mejorar
                     </button>
                   </label>
-                  <textarea rows={3} value={report.reportedIssue} onChange={(e) => setReport({ ...report, reportedIssue: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
+                  <DebouncedTextarea rows={3} value={report.reportedIssue} onDebouncedChange={(val) => setReport({ ...report, reportedIssue: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                 </div>
 
                 <div>
@@ -1341,7 +1344,7 @@ const App: React.FC = () => {
                       Mejorar
                     </button>
                   </label>
-                  <textarea rows={4} value={report.diagnosis} onChange={(e) => setReport({ ...report, diagnosis: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
+                  <DebouncedTextarea rows={4} value={report.diagnosis} onDebouncedChange={(val) => setReport({ ...report, diagnosis: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                 </div>
 
                 <div>
@@ -1356,7 +1359,18 @@ const App: React.FC = () => {
                       Mejorar
                     </button>
                   </label>
-                  <textarea rows={4} value={report.workPerformed} onChange={(e) => setReport({ ...report, workPerformed: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"></textarea>
+                  <DebouncedTextarea rows={4} value={report.workPerformed} onDebouncedChange={(val) => setReport({ ...report, workPerformed: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700">Observaciones</label>
+                  <DebouncedTextarea
+                    rows={2}
+                    value={report.notes || ''}
+                    onDebouncedChange={(val) => setReport({ ...report, notes: val })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
+                    placeholder="Notas adicionales o comentarios visibles en el informe..."
+                  />
                 </div>
 
                 <div>
