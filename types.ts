@@ -83,7 +83,6 @@ export interface ReportData {
   diagnosis: string;
   workPerformed: string;
   recommendations: string;
-  notes?: string; // Observaciones generales
   locked?: boolean;
 }
 

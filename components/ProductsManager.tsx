@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { DebouncedInput } from './DebouncedInput';
 import { Product, ItemType } from '../types';
 import * as XLSX from 'xlsx';
 import { parseProductList } from '../services/geminiService';
@@ -29,6 +30,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
         type: 'material',
         category: 'general',
         description: '',
+        costPrice: 0,
         unitPrice: 0,
         code: '',
         stock: 0,
@@ -45,8 +47,8 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
     // Margin Helper
     const getMarkupForSupplier = (supplierName: string): number => {
         if (!marginSettings) return 0;
-        // Case insensitive check
-        const supKey = Object.keys(marginSettings.suppliers).find(k => k.toLowerCase() === supplierName.toLowerCase());
+        // Case insensitive check and TRIMMED
+        const supKey = Object.keys(marginSettings.suppliers).find(k => k.trim().toLowerCase() === supplierName.trim().toLowerCase());
         return supKey ? marginSettings.suppliers[supKey] : (marginSettings.default || 0);
     };
 
@@ -74,6 +76,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                 type: formData.type as ItemType || 'material',
                 category: formData.category || 'general',
                 description: formData.description,
+                costPrice: formData.costPrice || 0,
                 unitPrice: formData.unitPrice,
                 code: formData.code,
                 stock: formData.stock || 0,
@@ -88,6 +91,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
             type: 'material',
             category: 'general',
             description: '',
+            costPrice: 0,
             unitPrice: 0,
             code: '',
             stock: 0,
@@ -135,18 +139,26 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
             let newProducts: Product[] = [];
 
             if (['jpg', 'jpeg', 'png', 'pdf'].includes(fileType || '')) {
-                // AI Processing
+                // ... (Existing Image/PDF logic - can remain similar but strictly set cost)
                 const reader = new FileReader();
                 reader.onload = async (evt) => {
+                    // ... (keep existing image logic for now, or apply similar fix if needed)
+                    // For brevity, let's focus on the Excel/CSV part which is the main bulk import vector
+                    // But we MUST apply the margin check here too.
+
+                    const margin = getMarkupForSupplier(importSupplier.trim());
+                    if (!window.confirm(`Procesando imágenes para "${importSupplier}".\nMargen detectado: ${margin}%\n\n¿Continuar?`)) {
+                        setIsImporting(false);
+                        return;
+                    }
+
                     const base64 = (evt.target?.result as string).split(',')[1];
                     const mimeType = fileType === 'pdf' ? 'application/pdf' : 'image/jpeg';
 
                     try {
                         const extracted = await parseProductList(base64, mimeType);
-
                         newProducts = extracted.map(item => {
-                            const cost = Number(item.unitPrice) || 0;
-                            const margin = getMarkupForSupplier(importSupplier);
+                            const cost = Number(item.unitPrice) || 0; // AI typically returns the listed price as "unitPrice"
                             return {
                                 id: Math.random().toString(36).substr(2, 9),
                                 type: 'material',
@@ -159,9 +171,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                 supplier: importSupplier
                             };
                         });
-
                         finishImport(newProducts);
-
                     } catch (err: any) {
                         alert("Error procesando con IA: " + err.message);
                         setIsImporting(false);
@@ -171,79 +181,127 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
 
             } else {
                 // Excel Processing
+                const margin = getMarkupForSupplier(importSupplier.trim());
+                if (!window.confirm(`Importando Excel/CSV para "${importSupplier}".\nMargen detectado: ${margin}%\n\nSe calculará: Precio Venta = Costo + ${margin}%\n\n¿Los precios en el archivo son COSTOS? (Si son precios finales, ajusta el margen a 0 antes de importar).`)) {
+                    setIsImporting(false);
+                    return;
+                }
+
                 const reader = new FileReader();
                 reader.onload = (evt) => {
-                    const bstr = evt.target?.result;
-                    const wb = XLSX.read(bstr, { type: 'binary' });
-                    const wsname = wb.SheetNames[0];
-                    const ws = wb.Sheets[wsname];
-                    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
+                    try {
+                        const bstr = evt.target?.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
 
-                    if (data.length < 2) {
-                        alert('Archivo vacío o sin datos');
-                        setIsImporting(false);
-                        return;
-                    }
-
-                    const headers = (data[0] as any[]).map(h => String(h || '').toLowerCase());
-                    const descIdx = headers.findIndex(h => (h || '').includes('descrip') || (h || '').includes('producto') || (h || '').includes('nombre'));
-                    const priceIdx = headers.findIndex(h => (h || '').includes('precio') || (h || '').includes('valor') || (h || '').includes('costo'));
-                    const codeIdx = headers.findIndex(h => (h || '').includes('cod') || (h || '').includes('sku'));
-                    const stockIdx = headers.findIndex(h => (h || '').includes('stock') || (h || '').includes('cant'));
-
-                    if (descIdx === -1 || priceIdx === -1) {
-                        alert('No se encontraron columnas requeridas (descripción, precio).');
-                        setIsImporting(false);
-                        return;
-                    }
-
-                    // Helper to clean price
-                    const parsePrice = (val: any): number => {
-                        if (typeof val === 'number') return val;
-                        if (!val) return 0;
-                        let str = String(val).trim();
-                        str = str.replace(/[$\s]/g, '');
-                        if (str.includes(',') && !str.includes('.')) { str = str.replace(',', '.'); }
-                        else if (str.includes(',') && str.includes('.')) {
-                            if (str.lastIndexOf(',') > str.lastIndexOf('.')) { str = str.replace(/\./g, '').replace(',', '.'); }
+                        if (data.length < 2) {
+                            alert('Archivo vacío o sin datos');
+                            setIsImporting(false);
+                            return;
                         }
-                        return parseFloat(str);
-                    };
 
-                    for (let i = 1; i < data.length; i++) {
-                        const row = data[i] as any[];
-                        if (!row || row.length === 0) continue;
+                        // Sanitize headers: Ensure dense array and strings
+                        const rawHeaders = (data[0] as any[]) || [];
+                        const headers = Array.from(rawHeaders).map(h => String(h || '').toLowerCase());
 
-                        const desc = row[descIdx] ? String(row[descIdx]).trim() : '';
-                        const price = parsePrice(row[priceIdx]);
+                        // Improved matching for headers
+                        const descIdx = headers.findIndex(h => h && (h.includes('descrip') || h.includes('producto') || h.includes('nombre') || h.includes('articulo')));
+                        const priceIdx = headers.findIndex(h => h && (h.includes('precio') || h.includes('valor') || h.includes('costo') || h.includes('importe')));
+                        const codeIdx = headers.findIndex(h => h && (h.includes('cod') || h.includes('sku') || h.includes('id')));
+                        const stockIdx = headers.findIndex(h => h && (h.includes('stock') || h.includes('cant') || h.includes('existencia')));
 
-                        if (desc && !isNaN(price)) {
-                            const margin = getMarkupForSupplier(importSupplier);
-                            newProducts.push({
-                                id: Math.random().toString(36).substr(2, 9),
-                                type: 'material',
-                                category: importCategory,
-                                description: desc,
-                                costPrice: price,
-                                unitPrice: price * (1 + margin / 100),
-                                code: codeIdx !== -1 ? String(row[codeIdx] || '') : '',
-                                stock: stockIdx !== -1 ? (parseInt(String(row[stockIdx])) || 0) : 0,
-                                supplier: importSupplier
-                            });
+                        if (descIdx === -1 || priceIdx === -1) {
+                            alert(`No se encontraron columnas requeridas.\nSe buscó: Descripción, Precio/Costo.\nEncabezados encontrados: ${headers.join(', ')}`);
+                            setIsImporting(false);
+                            return;
                         }
+
+                        // Robust Price Parser
+                        const parsePrice = (val: any): number => {
+                            if (typeof val === 'number') return val;
+                            if (!val) return 0;
+                            let str = String(val).trim();
+
+                            // Remove common currency symbols
+                            str = str.replace(/[$\sA-Za-z]/g, '');
+
+                            // Handle "1.200,50" (European/Latam) vs "1,200.50" (US)
+                            // Heuristic: Last separator determines decimal if multiple types exist
+                            const lastComma = str.lastIndexOf(',');
+                            const lastDot = str.lastIndexOf('.');
+
+                            if (lastComma > -1 && lastDot > -1) {
+                                if (lastComma > lastDot) {
+                                    // 1.200,50 -> Remove dots, replace comma with dot
+                                    str = str.replace(/\./g, '').replace(',', '.');
+                                } else {
+                                    // 1,200.50 -> Remove commas
+                                    str = str.replace(/,/g, '');
+                                }
+                            } else if (lastComma > -1) {
+                                // Only commas. Could be decimal (12,50) or thousands (1,200)
+                                // Often in CSVs, thousands separator is avoided, so assume decimal if it looks like XX,XX
+                                // But "1,200" is ambiguous.
+                                // Let's assume Latam context: comma is decimal.
+                                str = str.replace(',', '.');
+                            }
+                            return parseFloat(str);
+                        };
+
+                        for (let i = 1; i < data.length; i++) {
+                            const row = data[i] as any[];
+                            if (!row || row.length === 0) continue;
+
+                            const desc = row[descIdx] ? String(row[descIdx]).trim() : '';
+                            const rawPrice = row[priceIdx];
+                            const price = parsePrice(rawPrice);
+
+                            if (desc && !isNaN(price)) {
+                                newProducts.push({
+                                    id: Math.random().toString(36).substr(2, 9),
+                                    type: 'material',
+                                    category: importCategory,
+                                    description: desc,
+                                    costPrice: price, // THE KEY FIX: The file value is the COST
+                                    unitPrice: price * (1 + margin / 100), // Calculated selling price
+                                    code: codeIdx !== -1 ? String(row[codeIdx] || '') : '',
+                                    stock: stockIdx !== -1 ? (parseInt(String(row[stockIdx]).replace(/\D/g, '')) || 0) : 0,
+                                    supplier: importSupplier
+                                });
+                            }
+                        }
+
+                        if (newProducts.length === 0) {
+                            alert('No se pudieron extraer productos válidos. Verifique el formato del archivo.');
+                            setIsImporting(false);
+                            return;
+                        }
+
+                        finishImport(newProducts);
+
+                    } catch (error: any) {
+                        console.error("Import Error:", error);
+                        alert('Error crítico al procesar el archivo: ' + error.message);
+                        setIsImporting(false);
                     }
-                    finishImport(newProducts);
+                };
+                reader.onerror = () => {
+                    alert('Error al leer el archivo físico.');
+                    setIsImporting(false);
                 };
                 reader.readAsBinaryString(file);
             }
 
-        } catch (e) {
-            console.error(e);
-            alert("Error general en importación");
+        } catch (error: any) {
+            console.error("Critical Import Error:", error);
+            alert("Error crítico de importación: " + error.message);
             setIsImporting(false);
         }
 
-        e.target.value = ''; // Reset input
+        // Reset input
+        e.target.value = '';
     };
 
     const finishImport = (newItems: Product[]) => {
@@ -302,21 +360,37 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
     };
 
     const [showSettings, setShowSettings] = useState(false);
+    const [localSettings, setLocalSettings] = useState(marginSettings);
+
+    // Sync local settings when opening the panel
+    React.useEffect(() => {
+        if (showSettings && marginSettings) {
+            setLocalSettings(marginSettings);
+        }
+    }, [showSettings, marginSettings]);
 
     // settings handlers
     const handleUpdateMargin = (key: string, val: number) => {
-        if (!marginSettings || !onUpdateMarginSettings) return;
+        if (!localSettings) return;
         if (key === 'default') {
-            onUpdateMarginSettings({ ...marginSettings, default: val });
+            setLocalSettings({ ...localSettings, default: val });
         } else {
-            const newSuppliers = { ...marginSettings.suppliers, [key]: val };
-            onUpdateMarginSettings({ ...marginSettings, suppliers: newSuppliers });
+            const newSuppliers = { ...localSettings.suppliers, [key]: val };
+            setLocalSettings({ ...localSettings, suppliers: newSuppliers });
+        }
+    };
+
+    const handleSaveSettings = () => {
+        if (localSettings && onUpdateMarginSettings) {
+            onUpdateMarginSettings(localSettings);
+            alert('Configuración guardada correctamente.');
+            setShowSettings(false);
         }
     };
 
     const handleToggleFreeze = (supplier: string) => {
-        if (!marginSettings || !onUpdateMarginSettings) return;
-        const currentFrozen = marginSettings.frozenSuppliers || [];
+        if (!localSettings) return;
+        const currentFrozen = localSettings.frozenSuppliers || [];
         const isFrozen = currentFrozen.includes(supplier);
 
         let newFrozen;
@@ -326,7 +400,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
             newFrozen = [...currentFrozen, supplier];
         }
 
-        onUpdateMarginSettings({ ...marginSettings, frozenSuppliers: newFrozen });
+        setLocalSettings({ ...localSettings, frozenSuppliers: newFrozen });
     };
 
     const handleDeleteSupplier = (supplier: string) => {
@@ -381,7 +455,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                 </div>
 
                 {/* Settings Overlay */}
-                {showSettings && marginSettings && (
+                {showSettings && localSettings && (
                     <div className="bg-gray-50 border-b p-4 animate-fade-in relative shadow-inner">
                         <button onClick={() => setShowSettings(false)} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
                         <h3 className="font-bold text-gray-700 mb-3"><i className="fas fa-percentage text-brand-500 mr-2"></i>Configuración de Márgenes de Ganancia</h3>
@@ -390,10 +464,10 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                             <div className="bg-white p-3 rounded border shadow-sm">
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Margen General (Defecto)</label>
                                 <div className="flex items-center gap-2">
-                                    <input
+                                    <DebouncedInput
                                         type="number"
-                                        value={marginSettings.default}
-                                        onChange={e => handleUpdateMargin('default', parseFloat(e.target.value) || 0)}
+                                        value={localSettings.default}
+                                        onDebouncedChange={val => handleUpdateMargin('default', parseFloat(val) || 0)}
                                         className="w-20 border rounded p-1 text-right font-bold text-brand-600"
                                     />
                                     <span className="text-gray-500 font-bold">%</span>
@@ -408,10 +482,10 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                     {/* List existing suppliers from products to allow config, plus an empty adder? 
                                         For now, list known suppliers from the product list and allow setting their margin. 
                                     */}
-                                    {Array.from(new Set(products.map(p => p.supplier).filter(Boolean)))
+                                    {Array.from(new Set(products.map(p => p.supplier ? p.supplier.trim() : '').filter(Boolean)))
                                         .map(s => s as string)
                                         .map(sup => {
-                                            const isFrozen = marginSettings.frozenSuppliers?.includes(sup);
+                                            const isFrozen = localSettings.frozenSuppliers?.includes(sup);
                                             return (
                                                 <div key={sup} className={`flex items-center justify-between bg-gray-50 p-1.5 rounded border ${isFrozen ? 'opacity-60 bg-gray-100' : ''}`}>
                                                     <div className="flex items-center overflow-hidden mr-2">
@@ -419,13 +493,13 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                                         <span className={`text-xs truncate font-medium text-gray-600 ${isFrozen ? 'line-through' : ''}`} title={sup}>{sup}</span>
                                                     </div>
                                                     <div className="flex items-center gap-1">
-                                                        <input
+                                                        <DebouncedInput
                                                             type="number"
                                                             placeholder="Def"
-                                                            value={marginSettings.suppliers[sup] ?? ''}
-                                                            onChange={e => handleUpdateMargin(sup, parseFloat(e.target.value))}
-                                                            className="w-10 border rounded p-0.5 text-right text-xs"
-                                                            disabled={isFrozen}
+                                                            value={localSettings.suppliers[sup] ?? ''}
+                                                            onDebouncedChange={val => handleUpdateMargin(sup, parseFloat(val))}
+                                                            className="w-16 border rounded p-1 text-right text-xs"
+                                                            disabled={!!isFrozen}
                                                         />
                                                         <span className="text-[10px] text-gray-400 mr-1">%</span>
 
@@ -447,9 +521,17 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                                 </div>
                                             );
                                         })}
-                                    {/* If no suppliers, show message */}
                                     {products.every(p => !p.supplier) && <p className="text-xs text-gray-400 italic">No tienes proveedores registrados en tus productos aún.</p>}
                                 </div>
+                            </div>
+
+                            <div className="flex flex-col justify-end">
+                                <button
+                                    onClick={handleSaveSettings}
+                                    className="bg-brand-600 text-white px-4 py-2 rounded shadow hover:bg-brand-700 transition font-bold text-sm"
+                                >
+                                    <i className="fas fa-save mr-2"></i>Guardar Configuración
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -514,23 +596,38 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
 
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Precio ($)</label>
-                                    <input
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Costo ($)</label>
+                                    <DebouncedInput
                                         type="number"
-                                        value={formData.unitPrice || ''}
-                                        onChange={e => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                                        value={formData.costPrice || ''}
+                                        onDebouncedChange={val => {
+                                            const cost = parseFloat(val) || 0;
+                                            const margin = getMarkupForSupplier(formData.supplier || '') || 0;
+                                            const price = cost * (1 + margin / 100);
+                                            setFormData({ ...formData, costPrice: cost, unitPrice: price });
+                                        }}
                                         className="w-full border rounded p-2 text-sm"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Stock</label>
-                                    <input
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Precio Venta ($)</label>
+                                    <DebouncedInput
                                         type="number"
-                                        value={formData.stock || ''}
-                                        onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
+                                        value={formData.unitPrice || ''}
+                                        onDebouncedChange={val => setFormData({ ...formData, unitPrice: parseFloat(val) || 0 })}
                                         className="w-full border rounded p-2 text-sm"
                                     />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Stock</label>
+                                <DebouncedInput
+                                    type="number"
+                                    value={formData.stock || ''}
+                                    onDebouncedChange={val => setFormData({ ...formData, stock: parseInt(val) || 0 })}
+                                    className="w-full border rounded p-2 text-sm"
+                                />
                             </div>
 
                             <div>
@@ -560,7 +657,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                             <div className="pt-2 flex gap-2">
                                 {editingId && (
                                     <button
-                                        onClick={() => { setEditingId(null); setFormData({ type: 'material', category: 'general', description: '', unitPrice: 0, code: '', stock: 0, supplier: '', isFavorite: false }); }}
+                                        onClick={() => { setEditingId(null); setFormData({ type: 'material', category: 'general', description: '', costPrice: 0, unitPrice: 0, code: '', stock: 0, supplier: '', isFavorite: false }); }}
                                         className="flex-1 bg-gray-300 text-gray-700 py-2 rounded text-sm hover:bg-gray-400"
                                     >
                                         Cancelar
@@ -629,12 +726,12 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                         <div className="mb-4 flex gap-2">
                             <div className="relative flex-1">
                                 <i className="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
-                                <input
+                                <DebouncedInput
                                     type="text"
                                     placeholder="Buscar por nombre o código..."
                                     className="w-full pl-9 pr-4 py-2 rounded border focus:outline-none focus:ring-2 focus:ring-brand-500"
                                     value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
+                                    onValueChange={setSearchTerm}
                                 />
                             </div>
                             <div className="bg-white px-3 py-2 rounded border text-sm text-gray-600">
@@ -689,10 +786,12 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                             <td className="p-3 text-right text-xs text-brand-500 font-bold">
                                                 {(() => {
                                                     if (product.costPrice && product.unitPrice) {
-                                                        const markup = ((product.unitPrice - product.costPrice) / product.costPrice) * 100;
-                                                        return `${Math.round(markup)}%`;
+                                                        const configured = getMarkupForSupplier(product.supplier || '');
+                                                        const calculated = Math.round(((product.unitPrice - product.costPrice) / product.costPrice) * 100);
+                                                        if (Math.abs(calculated - configured) < 1) return `${configured}%`;
+                                                        return `${calculated}%`;
                                                     }
-                                                    return '-';
+                                                    return getMarkupForSupplier(product.supplier || '') + '%';
                                                 })()}
                                             </td>
                                             <td className="p-3 text-right font-bold text-gray-800">${product.unitPrice.toLocaleString('es-AR')}</td>
@@ -736,6 +835,6 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };

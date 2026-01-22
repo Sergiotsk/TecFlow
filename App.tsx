@@ -98,8 +98,7 @@ const defaultReport: ReportData = {
   reportedIssue: '',
   diagnosis: '',
   workPerformed: '',
-  recommendations: '',
-  notes: ''
+  recommendations: ''
 };
 
 const defaultPresets: PresetItem[] = [
@@ -210,9 +209,18 @@ const App: React.FC = () => {
   const [marginSettings, setMarginSettings] = useState<{ default: number, suppliers: Record<string, number>, frozenSuppliers: string[] }>(() => {
     const saved = localStorage.getItem('marginSettings');
     const parsed = saved ? JSON.parse(saved) : {};
+
+    // HEALING: Trim keys to fix "XC " vs "XC" issue permanently
+    const cleanSuppliers: Record<string, number> = {};
+    if (parsed.suppliers) {
+      Object.keys(parsed.suppliers).forEach(k => {
+        cleanSuppliers[k.trim()] = parsed.suppliers[k];
+      });
+    }
+
     return {
       default: parsed.default || 30,
-      suppliers: parsed.suppliers || {},
+      suppliers: cleanSuppliers,
       frozenSuppliers: parsed.frozenSuppliers || []
     };
   });
@@ -221,6 +229,47 @@ const App: React.FC = () => {
     localStorage.setItem('categories', JSON.stringify(categories));
     localStorage.setItem('marginSettings', JSON.stringify(marginSettings));
   }, [categories, marginSettings]);
+
+  // Handler to update margins AND recalculate prices for all inventory items
+  const handleUpdateMarginSettings = (newSettings: { default: number, suppliers: Record<string, number>, frozenSuppliers: string[] }) => {
+    setMarginSettings(newSettings);
+
+    const updatedPresets = presets.map(item => {
+      // Only update if it has a valid cost price and supplier
+      if (item.costPrice && item.supplier) {
+        // Find applicable margin
+        // Check case-insensitive and TRIMMED
+        const supKey = Object.keys(newSettings.suppliers).find(k => k.trim().toLowerCase() === item.supplier!.trim().toLowerCase());
+        const margin = supKey ? newSettings.suppliers[supKey] : newSettings.default;
+
+        // Recalculate Price
+        const newPrice = item.costPrice * (1 + margin / 100);
+
+        return {
+          ...item,
+          unitPrice: newPrice
+          // Optional: Update lastUpdated timestamp? item.lastUpdated = new Date().toISOString();
+        };
+      }
+      return item;
+    });
+
+    // Only trigger update if something actually changed (optimization)
+    // But since we are replacing the whole state, simple set is fine.
+    // Count changed items for feedback
+    const changedCount = updatedPresets.filter((item, index) => item.unitPrice !== presets[index].unitPrice).length;
+
+    if (JSON.stringify(updatedPresets) !== JSON.stringify(presets)) {
+      setPresets(updatedPresets);
+      if (changedCount > 0) {
+        alert(`✅ Configuración guardada.\n\nSe actualizaron los precios de ${changedCount} productos automáticamente.`);
+      } else {
+        alert('✅ Configuración guardada.\n\nNo hubo cambios en los precios de los productos (verifique que tengan Costo asignado).');
+      }
+    } else {
+      alert('✅ Configuración guardada (Sin cambios en productos).');
+    }
+  };
   const [showPresetForm, setShowPresetForm] = useState(false);
   const [newPreset, setNewPreset] = useState<Omit<PresetItem, 'id'>>({ type: 'service', category: 'computacion', description: '', unitPrice: 0 });
   const [selectedCategory, setSelectedCategory] = useState<PresetCategory | 'all'>('all');
@@ -706,11 +755,11 @@ const App: React.FC = () => {
               <div className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-3">
                   <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Cant.</label>
-                  <input
+                  <DebouncedInput
                     type="number"
                     min="1"
                     value={item.quantity}
-                    onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                    onDebouncedChange={(val) => handleItemChange(item.id, 'quantity', parseInt(val) || 0)}
                     className="w-full rounded-md border-gray-300 text-sm p-1.5 border text-center bg-white"
                   />
                 </div>
@@ -718,10 +767,10 @@ const App: React.FC = () => {
                   <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Unitario</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1.5 text-gray-400 text-xs">$</span>
-                    <input
+                    <DebouncedInput
                       type="number"
                       value={item.unitPrice}
-                      onChange={(e) => handleItemChange(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                      onDebouncedChange={(val) => handleItemChange(item.id, 'unitPrice', parseFloat(val) || 0)}
                       className="w-full rounded-md border-gray-300 text-sm p-1.5 pl-5 border bg-white"
                     />
                   </div>
@@ -902,7 +951,7 @@ const App: React.FC = () => {
           onUpdateProducts={(updated) => setPresets(updated)}
           initialSupplier={activeSupplier}
           marginSettings={marginSettings}
-          onUpdateMarginSettings={setMarginSettings}
+          onUpdateMarginSettings={handleUpdateMarginSettings}
           onSelectProduct={(product) => {
             // If we are in quote mode, add the product to the quote
             if (mode === 'quote') {
@@ -1363,13 +1412,13 @@ const App: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700">Observaciones</label>
+                  <label className="block text-xs font-medium text-gray-700">Recomendaciones</label>
                   <DebouncedTextarea
                     rows={2}
-                    value={report.notes || ''}
-                    onDebouncedChange={(val) => setReport({ ...report, notes: val })}
+                    value={report.recommendations || ''}
+                    onDebouncedChange={(val) => setReport({ ...report, recommendations: val })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
-                    placeholder="Notas adicionales o comentarios visibles en el informe..."
+                    placeholder="Sugerencias para el cliente..."
                   />
                 </div>
 

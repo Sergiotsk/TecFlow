@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { BusinessSettings, PresetItem, ItemType } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { DebouncedInput } from './DebouncedInput';
+import { DebouncedTextarea } from './DebouncedTextarea';
 
 interface SettingsModalProps {
   settings: BusinessSettings;
