@@ -3,7 +3,7 @@ export interface ElectronAPI {
     // PDF operations
     getPdfDirectory: () => Promise<string>;
     choosePdfDirectory: () => Promise<string | null>;
-    savePdf: (filename: string, htmlContent: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+    savePdf: (filename: string, footerHtml: string) => Promise<{ success: boolean; path?: string; error?: string }>;
     openPdfDirectory: () => Promise<string>;
 
     // Data export/import

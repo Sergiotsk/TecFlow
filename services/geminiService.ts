@@ -64,12 +64,14 @@ export const parseProductList = async (base64Data: string, mimeType: string): Pr
     Extrae CADA ítem encontrado en una lista JSON estructurada.
     Para cada ítem, intenta identificar:
     - 'description': Nombre o descripción del producto.
-    - 'unitPrice': Precio unitario (numérico, sin símbolos).
+    - 'unitPrice': Precio unitario EXACTAMENTE como aparece en la imagen (como STRING, incluyendo puntos, comas y símbolos de moneda). NO lo conviertas a número.
     - 'code': Código, SKU o ID del producto si existe.
     - 'stock': Cantidad disponible si existe (numérico).
     
-    Si no encuentras código o stock, déjalos vacíos o en 0.
-    IMPORTANTE: Devuelve SOLAMENTE el array JSON válido, sin bloques de código markdown, sin texto adicional.`;
+    IMPORTANTE: 
+    - El campo 'unitPrice' debe ser un STRING que preserve el formato original (ej: "$172.900", "157,15", etc.)
+    - Si no encuentras código o stock, déjalos vacíos o en 0.
+    - Devuelve SOLAMENTE el array JSON válido, sin bloques de código markdown, sin texto adicional.`;
 
     const imagePart = {
       inlineData: {

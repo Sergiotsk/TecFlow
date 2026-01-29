@@ -14,14 +14,110 @@
   }
 }
 
+/* Hide Print Portal on Screen */
+#print-root {
+  display: none;
+}
+
 @media print {
   @page {
     size: A4;
-    margin: 15mm;
+    margin: 0;
+    /* No margins - full page */
   }
 
+
+
+  html,
   body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Portal Hiding Strategy: The only robust way to print React SPAs */
+  body>* {
+    display: none !important;
+  }
+
+  /* Show ONLY the print portal */
+  #print-root {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    /* No padding - full width */
+    background: white !important;
+  }
+
+  /* Explicit Table Rules for Headless Chrome */
+  .print-head {
+    display: table-header-group !important;
+  }
+
+  .print-foot {
+    display: table-footer-group !important;
+  }
+
+  .print-body {
+    display: table-row-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+  }
+
+  /* Reset print container if used inside portal */
+  .print-container {
+    width: 100%;
+    display: table;
+    /* Crucial for repeating headers */
+  }
+
+  .print-head {
+    display: table-header-group;
+  }
+
+  .print-foot {
+    display: table-footer-group;
+  }
+
+  .print-body {
+    display: table-row-group;
+  }
+
+  /* Fixed Footer with Page Numbers */
+  .print-footer-fixed {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
+    /* Match spacer height */
     background: white;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+
+
+
+  /* Force page breaks if needed */
+  .page-break {
+    page-break-before: always;
+  }
+
+  /* Hide standard scrollbars/buttons */
+  .no-print {
+    display: none !important;
   }
 }
 

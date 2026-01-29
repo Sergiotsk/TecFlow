@@ -116,6 +116,56 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
         onUpdateProducts(updated);
     };
 
+    // Shared Price Parser for both CSV and Image imports
+    const parsePrice = (val: any): number => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        let str = String(val).trim();
+
+        // Remove common currency symbols and spaces
+        str = str.replace(/[$\sA-Za-z]/g, '');
+
+        // Handle "1.200,50" (European/Latam) vs "1,200.50" (US)
+        const lastComma = str.lastIndexOf(',');
+        const lastDot = str.lastIndexOf('.');
+
+        if (lastComma > -1 && lastDot > -1) {
+            // Both separators present
+            if (lastComma > lastDot) {
+                // Format: 1.200,50 (Latam) -> Remove dots, replace comma with dot
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else {
+                // Format: 1,200.50 (US) -> Remove commas
+                str = str.replace(/,/g, '');
+            }
+        } else if (lastComma > -1) {
+            // Only comma present
+            // Heuristic: If 3 digits after comma, it's thousands (e.g., "172,900")
+            // If 1-2 digits after comma, it's decimal (e.g., "12,50")
+            const afterComma = str.substring(lastComma + 1);
+            if (afterComma.length === 3) {
+                // Thousands separator: "172,900" -> "172900"
+                str = str.replace(',', '');
+            } else {
+                // Decimal separator: "12,50" -> "12.50"
+                str = str.replace(',', '.');
+            }
+        } else if (lastDot > -1) {
+            // Only dot present
+            // Heuristic: If 3 digits after dot, it's thousands (e.g., "172.900")
+            // If 1-2 digits after dot, it's decimal (e.g., "12.50")
+            const afterDot = str.substring(lastDot + 1);
+            if (afterDot.length === 3) {
+                // Thousands separator: "172.900" -> "172900"
+                str = str.replace('.', '');
+            }
+            // else: keep as is, it's already decimal format
+        }
+        const result = parseFloat(str);
+        console.log(`[parsePrice] Input: "${val}" → Cleaned: "${str}" → Result: ${result}`);
+        return result;
+    };
+
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -158,7 +208,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                     try {
                         const extracted = await parseProductList(base64, mimeType);
                         newProducts = extracted.map(item => {
-                            const cost = Number(item.unitPrice) || 0; // AI typically returns the listed price as "unitPrice"
+                            const cost = parsePrice(item.unitPrice); // Parse AI-extracted price correctly
                             return {
                                 id: Math.random().toString(36).substr(2, 9),
                                 type: 'material',
@@ -217,38 +267,6 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                             setIsImporting(false);
                             return;
                         }
-
-                        // Robust Price Parser
-                        const parsePrice = (val: any): number => {
-                            if (typeof val === 'number') return val;
-                            if (!val) return 0;
-                            let str = String(val).trim();
-
-                            // Remove common currency symbols
-                            str = str.replace(/[$\sA-Za-z]/g, '');
-
-                            // Handle "1.200,50" (European/Latam) vs "1,200.50" (US)
-                            // Heuristic: Last separator determines decimal if multiple types exist
-                            const lastComma = str.lastIndexOf(',');
-                            const lastDot = str.lastIndexOf('.');
-
-                            if (lastComma > -1 && lastDot > -1) {
-                                if (lastComma > lastDot) {
-                                    // 1.200,50 -> Remove dots, replace comma with dot
-                                    str = str.replace(/\./g, '').replace(',', '.');
-                                } else {
-                                    // 1,200.50 -> Remove commas
-                                    str = str.replace(/,/g, '');
-                                }
-                            } else if (lastComma > -1) {
-                                // Only commas. Could be decimal (12,50) or thousands (1,200)
-                                // Often in CSVs, thousands separator is avoided, so assume decimal if it looks like XX,XX
-                                // But "1,200" is ambiguous.
-                                // Let's assume Latam context: comma is decimal.
-                                str = str.replace(',', '.');
-                            }
-                            return parseFloat(str);
-                        };
 
                         for (let i = 1; i < data.length; i++) {
                             const row = data[i] as any[];
@@ -781,7 +799,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                                 </span>
                                             </td>
                                             <td className="p-3 text-right text-xs text-gray-500">
-                                                {product.costPrice ? `$${product.costPrice.toLocaleString('es-AR')}` : '-'}
+                                                {product.costPrice ? `$${product.costPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                                             </td>
                                             <td className="p-3 text-right text-xs text-brand-500 font-bold">
                                                 {(() => {
@@ -794,7 +812,7 @@ export const ProductsManager: React.FC<ProductsManagerProps> = ({ onClose, produ
                                                     return getMarkupForSupplier(product.supplier || '') + '%';
                                                 })()}
                                             </td>
-                                            <td className="p-3 text-right font-bold text-gray-800">${product.unitPrice.toLocaleString('es-AR')}</td>
+                                            <td className="p-3 text-right font-bold text-gray-800">${product.unitPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                             <td className="p-3 text-right">
                                                 {product.type === 'material' ? (
                                                     <span className={`${product.stock && product.stock < 5 ? 'text-red-500 font-bold' : 'text-gray-600'}`}>

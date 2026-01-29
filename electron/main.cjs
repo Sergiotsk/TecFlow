@@ -91,38 +91,40 @@ ipcMain.handle('choose-pdf-directory', async () => {
 });
 
 // Save PDF
-ipcMain.handle('save-pdf', async (event, { filename, htmlContent }) => {
+// Save PDF (Native Main Window Capture)
+ipcMain.handle('save-pdf', async (event, { filename, footerHtml }) => {
     try {
-        const saveDir = getPdfSaveDirectory();
-        const fullPath = path.join(saveDir, filename);
-
-        // Create a hidden window for PDF generation
-        const pdfWindow = new BrowserWindow({
-            show: false,
-            webPreferences: {
-                nodeIntegration: false
-            }
+        // 1. Ask user where to save
+        const { filePath } = await dialog.showSaveDialog(mainWindow, {
+            title: 'Guardar PDF',
+            defaultPath: filename,
+            filters: [
+                { name: 'PDF Files', extensions: ['pdf'] }
+            ]
         });
 
-        // Load the HTML content
-        await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+        if (!filePath) return { success: false, canceled: true };
 
-        // Generate PDF
-        const pdfData = await pdfWindow.webContents.printToPDF({
-            marginsType: 0,
+        // 2. Generate PDF from MAIN WINDOW (respecting @media print)
+        // We use displayHeaderFooter to ensure page numbers appear cleanly
+        // 2. Generate PDF from MAIN WINDOW (respecting @media print)
+        // We rely purely on CSS (@page) for layout, margins, and paper size.
+        const pdfData = await mainWindow.webContents.printToPDF({
+            marginsType: 1, // 1 = No Margins (Controlled by CSS Padding)
             printBackground: true,
             printSelectionOnly: false,
-            landscape: false,
-            pageSize: 'A4'
+            pageSize: 'A4',
+            scaleFactor: 100,
+            displayHeaderFooter: false
         });
 
-        // Save to file
-        fs.writeFileSync(fullPath, pdfData);
+        // 3. Save to file
+        fs.writeFileSync(filePath, pdfData);
 
-        // Close the hidden window
-        pdfWindow.close();
+        // 4. Open folder? Optional. 
+        // shell.showItemInFolder(filePath);
 
-        return { success: true, path: fullPath };
+        return { success: true, path: filePath };
     } catch (error) {
         console.error('Error saving PDF:', error);
         return { success: false, error: error.message };

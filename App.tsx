@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { SettingsModal } from './components/SettingsModal';
 import { SavedDocumentsModal } from './components/SavedDocumentsModal';
 import { PrintableDocument } from './components/PrintableDocument';
@@ -405,18 +406,61 @@ const App: React.FC = () => {
     }, 100);
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
+    const filename = `${mode === 'quote' ? 'Presupuesto' : 'Informe'}_${mode === 'quote' ? quote.id : report.id}.pdf`;
+
+    // 1. ELECTRON NATIVE PDF (Best Quality)
+    if (window.electronAPI?.savePdf) {
+      // Lock before saving
+      if (mode === 'quote') {
+        const lockedQuote = { ...quote, locked: true };
+        setQuote(lockedQuote);
+        await saveQuote(lockedQuote);
+      } else {
+        const lockedReport = { ...report, locked: true };
+        setReport(lockedReport);
+        await saveReport(lockedReport);
+      }
+
+      // Small delay to ensure Portal/CSS is fully stable before capture
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Debug: Verify portal has content
+      const printRoot = document.getElementById('print-root');
+      if (!printRoot || !printRoot.innerHTML) {
+        alert('⚠️ Error: Contenido de impresión no encontrado. Intenta de nuevo.');
+        return;
+      }
+
+      const result = await window.electronAPI.savePdf(filename, '');
+
+      if (result.success) {
+        // Sync to electron
+        if (window.electronAPI?.saveDocuments) {
+          const allQuotes = JSON.parse(localStorage.getItem('saved_quotes') || '[]');
+          const allReports = JSON.parse(localStorage.getItem('saved_reports') || '[]');
+          const allDocs = [...allQuotes, ...allReports];
+          window.electronAPI.saveDocuments(allDocs);
+        }
+        alert('✅ PDF Guardado exitosamente');
+      } else if (result.error) {
+        alert('❌ Error al guardar PDF: ' + result.error);
+      }
+      return;
+    }
+
+    // 2. WEB FALLBACK (html2pdf)
     // Target the specific document container
     const element = document.getElementById('actual-receipt');
     if (!element) return;
 
-    // 1. Save original classes state
+    // Save original classes state
     const originalShadow = element.classList.contains('shadow-lg');
     const originalMinHeight = element.classList.contains('min-h-[297mm]');
     const originalAspect = element.classList.contains('aspect-[1/1.4142]');
     const originalHeightStyle = element.style.height;
 
-    // 2. Remove classes that cause overflow or extra space
+    // Remove classes that cause overflow or extra space
     // Removing min-height is crucial so it only takes up the necessary height
     element.classList.remove('shadow-lg');
     element.classList.remove('min-h-[297mm]');
@@ -430,13 +474,13 @@ const App: React.FC = () => {
 
     const opt = {
       margin: 0,
-      filename: `${mode === 'quote' ? 'Presupuesto' : 'Informe'}_${mode === 'quote' ? quote.id : report.id}.pdf`,
+      filename: filename,
       image: { type: 'jpeg' as const, quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
     };
 
-    // 3. Generate and Restore
+    // Generate and Restore
     html2pdf().set(opt).from(element).save().then(() => {
       // Restore classes
       if (originalShadow) element.classList.add('shadow-lg');
@@ -769,6 +813,7 @@ const App: React.FC = () => {
                     <span className="absolute left-2 top-1.5 text-gray-400 text-xs">$</span>
                     <DebouncedInput
                       type="number"
+                      formatAsNumber={true}
                       value={item.unitPrice}
                       onDebouncedChange={(val) => handleItemChange(item.id, 'unitPrice', parseFloat(val) || 0)}
                       className="w-full rounded-md border-gray-300 text-sm p-1.5 pl-5 border bg-white"
@@ -1213,12 +1258,13 @@ const App: React.FC = () => {
                             value={newPreset.description}
                             onChange={e => setNewPreset({ ...newPreset, description: e.target.value })}
                           />
-                          <input
+                          <DebouncedInput
                             type="number"
+                            formatAsNumber={true}
                             placeholder="$"
                             className="w-24 text-sm rounded border-gray-300 border p-1 bg-white"
                             value={newPreset.unitPrice || ''}
-                            onChange={e => setNewPreset({ ...newPreset, unitPrice: parseFloat(e.target.value) || 0 })}
+                            onDebouncedChange={val => setNewPreset({ ...newPreset, unitPrice: parseFloat(val) || 0 })}
                           />
                         </div>
                         <button onClick={handleCreatePreset} className="bg-brand-600 text-white text-xs py-1 rounded hover:bg-brand-700">
@@ -1282,6 +1328,13 @@ const App: React.FC = () => {
                     <label className="block text-xs font-medium text-gray-700">Impuesto (IVA %)</label>
                     <input type="number" value={quote.taxRate} onChange={(e) => setQuote({ ...quote, taxRate: parseFloat(e.target.value) || 0 })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                   </div>
+                </div>
+
+
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Tareas a realizar / Alcance</label>
+                  <DebouncedTextarea rows={3} placeholder="Describa el trabajo a realizar..." value={quote.scopeOfWork || ''} onDebouncedChange={(val) => setQuote({ ...quote, scopeOfWork: val })} className="block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                 </div>
 
                 <div>
@@ -1476,6 +1529,19 @@ const App: React.FC = () => {
 
       {/* Auto Update Notification */}
       <UpdateNotification />
+
+      {/* Hidden Print Portal - Renders outside main tree for perfect PDF/Print */}
+      {createPortal(
+        <div className="print-container">
+          <PrintableDocument
+            mode={mode}
+            business={business}
+            quoteData={previewQuote}
+            reportData={previewReport}
+          />
+        </div>,
+        document.getElementById('print-root')!
+      )}
     </div >
   );
 };

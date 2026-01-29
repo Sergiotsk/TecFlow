@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // PDF operations
     getPdfDirectory: () => ipcRenderer.invoke('get-pdf-directory'),
     choosePdfDirectory: () => ipcRenderer.invoke('choose-pdf-directory'),
-    savePdf: (filename, htmlContent) => ipcRenderer.invoke('save-pdf', { filename, htmlContent }),
+    savePdf: (filename, footerHtml) => ipcRenderer.invoke('save-pdf', { filename, footerHtml }),
     openPdfDirectory: () => ipcRenderer.invoke('open-pdf-directory'),
 
     // Data export/import
