@@ -1,4 +1,4 @@
-export type DocType = 'quote' | 'report' | 'invoice';
+export type DocType = 'quote' | 'report' | 'invoice' | 'printer-report';
 
 export interface BusinessSettings {
   name: string;
@@ -84,6 +84,28 @@ export interface ReportData {
   workPerformed: string;
   recommendations: string;
   locked?: boolean;
+  status?: string;
+}
+
+export interface PrinterReportData {
+  id: string;
+  date: string;
+  clientName: string;
+  printerModel: string;
+  serialNumber: string;
+  finalStatus: string;
+  technicianNotes: string;
+
+  // Test values (percentages)
+  cyanCoverage: number;
+  magentaCoverage: number;
+  yellowCoverage: number;
+  blackCoverage: number;
+  grayPattern: number;
+  printQualityTest: string;
+  alignment: string;
+
+  locked?: boolean;
 }
 
 export type InvoiceType = 'A' | 'B' | 'C' | 'M';
@@ -105,10 +127,16 @@ export interface SavedReport extends ReportData {
   lastModified: string; // ISO timestamp
 }
 
+export interface SavedPrinterReport extends PrinterReportData {
+  savedAt: string; // ISO timestamp
+  lastModified: string; // ISO timestamp
+}
+
 export interface AppState {
   mode: DocType;
   showSettings: boolean;
   business: BusinessSettings;
   quote: QuoteData;
   report: ReportData;
+  printerReport: PrinterReportData;
 }

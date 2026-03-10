@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { SavedQuote, SavedReport, QuoteData, ReportData, DocType } from '../types';
-import { getSavedQuotes, getSavedReports, deleteQuote, deleteReport, formatDateToDisplay } from '../utils/storage';
+import { SavedQuote, SavedReport, SavedPrinterReport, QuoteData, ReportData, PrinterReportData, DocType } from '../types';
+import { getSavedQuotes, getSavedReports, getSavedPrinterReports, deleteQuote, deleteReport, deletePrinterReport, formatDateToDisplay } from '../utils/storage';
 
 interface SavedDocumentsModalProps {
     mode: DocType;
-    onLoad: (doc: QuoteData | ReportData) => void;
+    onLoad: (doc: QuoteData | ReportData | PrinterReportData) => void;
     onClose: () => void;
 }
 
 export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, onLoad, onClose }) => {
     const [quotes, setQuotes] = useState<SavedQuote[]>([]);
     const [reports, setReports] = useState<SavedReport[]>([]);
+    const [printerReports, setPrinterReports] = useState<SavedPrinterReport[]>([]);
 
     useEffect(() => {
         loadDocuments();
@@ -19,6 +20,7 @@ export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, 
     const loadDocuments = () => {
         setQuotes(getSavedQuotes());
         setReports(getSavedReports());
+        setPrinterReports(getSavedPrinterReports());
     };
 
     const handleDelete = (id: string) => {
@@ -26,8 +28,10 @@ export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, 
 
         if (mode === 'quote') {
             deleteQuote(id);
-        } else {
+        } else if (mode === 'report') {
             deleteReport(id);
+        } else if (mode === 'printer-report') {
+            deletePrinterReport(id);
         }
         loadDocuments();
     };
@@ -50,8 +54,9 @@ export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, 
         });
     };
 
-    const documents = mode === 'quote' ? quotes : reports;
+    const documents = mode === 'quote' ? quotes : (mode === 'printer-report' ? printerReports : reports);
     const isQuote = mode === 'quote';
+    const isPrinterReport = mode === 'printer-report';
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -61,8 +66,8 @@ export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, 
                     <div className="flex justify-between items-center">
                         <div>
                             <h2 className="text-2xl font-bold flex items-center gap-2">
-                                <i className={`fas ${isQuote ? 'fa-file-invoice-dollar' : 'fa-clipboard-check'}`}></i>
-                                {isQuote ? 'Presupuestos Guardados' : 'Informes Guardados'}
+                                <i className={`fas ${isQuote ? 'fa-file-invoice-dollar' : (isPrinterReport ? 'fa-print' : 'fa-clipboard-check')}`}></i>
+                                {isQuote ? 'Presupuestos Guardados' : (isPrinterReport ? 'Reportes de Impresora Guardados' : 'Informes Guardados')}
                             </h2>
                             <p className="text-brand-100 text-sm mt-1">
                                 {documents.length} documento{documents.length !== 1 ? 's' : ''} guardado{documents.length !== 1 ? 's' : ''}
@@ -82,7 +87,7 @@ export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, 
                     {documents.length === 0 ? (
                         <div className="text-center py-12">
                             <i className={`fas ${isQuote ? 'fa-file-invoice' : 'fa-clipboard'} text-6xl text-gray-300 mb-4`}></i>
-                            <p className="text-gray-500 text-lg">No hay {isQuote ? 'presupuestos' : 'informes'} guardados</p>
+                            <p className="text-gray-500 text-lg">No hay {isQuote ? 'presupuestos' : (isPrinterReport ? 'reportes de impresora' : 'informes')} guardados</p>
                             <p className="text-gray-400 text-sm mt-2">
                                 Los documentos que guardes aparecerán aquí
                             </p>
@@ -115,10 +120,17 @@ export const SavedDocumentsModal: React.FC<SavedDocumentsModalProps> = ({ mode, 
                                                 </p>
                                             )}
 
-                                            {!isQuote && (doc as SavedReport).deviceType && (
+                                            {!isQuote && !isPrinterReport && (doc as SavedReport).deviceType && (
                                                 <p className="text-gray-600 text-sm">
                                                     <i className="fas fa-laptop text-gray-400 mr-2"></i>
                                                     {(doc as SavedReport).deviceType}
+                                                </p>
+                                            )}
+
+                                            {isPrinterReport && (doc as SavedPrinterReport).printerModel && (
+                                                <p className="text-gray-600 text-sm">
+                                                    <i className="fas fa-print text-gray-400 mr-2"></i>
+                                                    {(doc as SavedPrinterReport).printerModel}
                                                 </p>
                                             )}
 

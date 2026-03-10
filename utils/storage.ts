@@ -1,4 +1,4 @@
-import { QuoteData, ReportData, SavedQuote, SavedReport } from '../types';
+import { QuoteData, ReportData, SavedQuote, SavedReport, PrinterReportData, SavedPrinterReport } from '../types';
 
 // Date Utilities
 export const formatDateToInput = (isoDate: string): string => {
@@ -43,6 +43,7 @@ export const addDaysToDate = (dateStr: string, days: number): string => {
 // Storage Utilities
 const QUOTES_KEY = 'saved_quotes';
 const REPORTS_KEY = 'saved_reports';
+const PRINTER_REPORTS_KEY = 'saved_printer_reports';
 
 export const saveQuote = (quote: QuoteData): void => {
     const quotes = getSavedQuotes();
@@ -114,10 +115,46 @@ export const deleteReport = (id: string): void => {
     localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
 };
 
+export const savePrinterReport = (report: PrinterReportData): void => {
+    const reports = getSavedPrinterReports();
+    const now = new Date().toISOString();
+
+    const existingIndex = reports.findIndex(r => r.id === report.id);
+
+    if (existingIndex >= 0) {
+        // Update existing
+        reports[existingIndex] = {
+            ...report,
+            savedAt: reports[existingIndex].savedAt,
+            lastModified: now
+        };
+    } else {
+        // Add new
+        reports.push({
+            ...report,
+            savedAt: now,
+            lastModified: now
+        });
+    }
+
+    localStorage.setItem(PRINTER_REPORTS_KEY, JSON.stringify(reports));
+};
+
+export const getSavedPrinterReports = (): SavedPrinterReport[] => {
+    const data = localStorage.getItem(PRINTER_REPORTS_KEY);
+    return data ? JSON.parse(data) : [];
+};
+
+export const deletePrinterReport = (id: string): void => {
+    const reports = getSavedPrinterReports().filter(r => r.id !== id);
+    localStorage.setItem(PRINTER_REPORTS_KEY, JSON.stringify(reports));
+};
+
 // Export/Import Utilities
 export interface ExportData {
     quotes: SavedQuote[];
     reports: SavedReport[];
+    printerReports?: SavedPrinterReport[];
     businessSettings: any;
     presets: any[];
     clients?: any[];
@@ -129,6 +166,7 @@ export const exportAllData = (): void => {
     const data: ExportData = {
         quotes: getSavedQuotes(),
         reports: getSavedReports(),
+        printerReports: getSavedPrinterReports(),
         businessSettings: JSON.parse(localStorage.getItem('businessSettings') || '{}'),
         presets: JSON.parse(localStorage.getItem('presets') || '[]'),
         clients: JSON.parse(localStorage.getItem('clients') || '[]'),
@@ -163,6 +201,10 @@ export const importAllData = (file: File): Promise<void> => {
                 // Import data
                 localStorage.setItem(QUOTES_KEY, JSON.stringify(data.quotes));
                 localStorage.setItem(REPORTS_KEY, JSON.stringify(data.reports));
+
+                if (data.printerReports) {
+                    localStorage.setItem(PRINTER_REPORTS_KEY, JSON.stringify(data.printerReports));
+                }
 
                 if (data.businessSettings) {
                     localStorage.setItem('businessSettings', JSON.stringify(data.businessSettings));

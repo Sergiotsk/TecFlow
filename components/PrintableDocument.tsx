@@ -1,5 +1,5 @@
 import React from 'react';
-import { BusinessSettings, QuoteData, ReportData, DocType, LineItem } from '../types';
+import { BusinessSettings, QuoteData, ReportData, PrinterReportData, DocType, LineItem } from '../types';
 import { formatDateToDisplay } from '../utils/storage';
 
 interface PrintableDocumentProps {
@@ -7,9 +7,10 @@ interface PrintableDocumentProps {
   business: BusinessSettings;
   quoteData: QuoteData;
   reportData: ReportData;
+  printerReportData?: PrinterReportData;
 }
 
-export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, business, quoteData, reportData }) => {
+export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, business, quoteData, reportData, printerReportData }) => {
   const isQuote = mode === 'quote';
 
   // Calculate Totals for Quote
@@ -104,14 +105,13 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
                 </div>
                 <div className="text-right">
                   <h2 className="text-3xl font-bold text-brand-600 uppercase tracking-wide">
-                    {isQuote ? 'Presupuesto' : 'Informe Técnico'}
+                    {mode === 'quote' ? 'Presupuesto' : (mode === 'printer-report' ? 'REPORTE DE IMPRESIÓN' : 'Informe Técnico')}
                   </h2>
 
-
                   <div className="mt-2 text-gray-600">
-                    <p><strong>Nº:</strong> {isQuote ? quoteData.id : reportData.id}</p>
-                    <p><strong>Fecha:</strong> {formatDateToDisplay(isQuote ? quoteData.date : reportData.date)}</p>
-                    {isQuote && <p className="text-xs text-red-500 mt-1">Válido hasta: {formatDateToDisplay(quoteData.validUntil)}</p>}
+                    <p><strong>Nº:</strong> {mode === 'quote' ? quoteData.id : (mode === 'printer-report' ? printerReportData?.id : reportData.id)}</p>
+                    <p><strong>Fecha:</strong> {formatDateToDisplay(mode === 'quote' ? quoteData.date : (mode === 'printer-report' ? printerReportData!.date : reportData.date))}</p>
+                    {mode === 'quote' && <p className="text-xs text-red-500 mt-1">Válido hasta: {formatDateToDisplay(quoteData.validUntil)}</p>}
                   </div>
                 </div>
 
@@ -125,58 +125,55 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
           <tr>
             <td>
               <div className="p-6 md:p-8 print:px-10 print:py-0">
-                {/* Client Info Section - Horizontal Layout */}
-                <section className="mb-4 border-b border-gray-200 pb-3">
-                  <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-                    {/* Client Name */}
-                    <div>
-                      <span className="text-xs font-bold uppercase text-gray-500 mr-2">Cliente:</span>
-                      <span className="font-semibold text-lg">{isQuote ? quoteData.clientName : reportData.clientName}</span>
+                {/* Client Info Section */}
+                <section className="mb-6">
+                  <div className="border-b border-gray-200 pb-3">
+                    <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+                      <div>
+                        <span className="text-xs font-bold uppercase text-gray-500 mr-2">Cliente:</span>
+                        <span className="font-semibold text-lg">{mode === 'quote' ? quoteData.clientName : (mode === 'printer-report' ? printerReportData?.clientName : reportData.clientName)}</span>
+                      </div>
+                      {mode === 'quote' && (
+                        <>
+                          {quoteData.clientAddress && (
+                            <div>
+                              <span className="text-xs font-bold uppercase text-gray-500 mr-2">Dirección:</span>
+                              <span className="text-gray-700">{quoteData.clientAddress}</span>
+                            </div>
+                          )}
+                          {quoteData.clientId && (
+                            <div>
+                              <span className="text-xs font-bold uppercase text-gray-500 mr-2">ID/CUIT:</span>
+                              <span className="text-gray-700">{quoteData.clientId}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
-
-                    {/* Quote Specifics - Address & ID */}
-                    {isQuote && (
-                      <>
-                        {quoteData.clientAddress && (
+                    {!isQuote && (
+                      <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex flex-wrap items-center gap-x-8 gap-y-2">
+                        <div>
+                          <span className="text-xs font-bold uppercase text-gray-500 mr-2">Equipo:</span>
+                          <span className="font-medium">{(mode === 'printer-report' && printerReportData?.printerModel) ? printerReportData.printerModel : reportData.deviceType}</span>
+                        </div>
+                        {((mode === 'printer-report' && printerReportData?.serialNumber) || reportData.serialNumber) && (
                           <div>
-                            <span className="text-xs font-bold uppercase text-gray-500 mr-2">Dirección:</span>
-                            <span className="text-gray-700">{quoteData.clientAddress}</span>
+                            <span className="text-xs font-bold uppercase text-gray-500 mr-2">S/N:</span>
+                            <span className="font-medium">{mode === 'printer-report' ? printerReportData?.serialNumber : reportData.serialNumber}</span>
                           </div>
                         )}
-                        {quoteData.clientId && (
-                          <div>
-                            <span className="text-xs font-bold uppercase text-gray-500 mr-2">ID/CUIT:</span>
-                            <span className="text-gray-700">{quoteData.clientId}</span>
-                          </div>
-                        )}
-                      </>
+                        <div className="ml-auto">
+                          <span className="text-xs font-bold uppercase text-gray-500 mr-2">Estado:</span>
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold text-white 
+                    ${reportData.status === 'Reparado' ? 'bg-green-500' :
+                              reportData.status === 'Sin Solución' ? 'bg-red-500' :
+                                reportData.status === 'Pendiente de Repuesto' ? 'bg-orange-500' : 'bg-blue-500'}`}>
+                            {reportData.status}
+                          </span>
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {/* Report Specifics - Equipment Details */}
-                  {!isQuote && (
-                    <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex flex-wrap items-center gap-x-8 gap-y-2">
-                      <div>
-                        <span className="text-xs font-bold uppercase text-gray-500 mr-2">Equipo:</span>
-                        <span className="font-medium">{reportData.deviceType}</span>
-                      </div>
-                      {reportData.serialNumber && (
-                        <div>
-                          <span className="text-xs font-bold uppercase text-gray-500 mr-2">S/N:</span>
-                          <span className="font-medium">{reportData.serialNumber}</span>
-                        </div>
-                      )}
-                      <div className="ml-auto">
-                        <span className="text-xs font-bold uppercase text-gray-500 mr-2">Estado:</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold text-white 
-                  ${reportData.status === 'Reparado' ? 'bg-green-500' :
-                            reportData.status === 'Sin Solución' ? 'bg-red-500' :
-                              reportData.status === 'Pendiente de Repuesto' ? 'bg-orange-500' : 'bg-blue-500'}`}>
-                          {reportData.status}
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </section>
 
                 {/* Content Body */}
@@ -213,7 +210,7 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
                         </div>
                       </div>
                     </div>
-                  ) : (
+                  ) : mode === 'report' ? (
                     // REPORT CONTENT
                     <div className="space-y-6">
                       <div className="break-inside-avoid">
@@ -233,6 +230,143 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
                         <p className="text-gray-700 whitespace-pre-wrap">{reportData.recommendations || 'Sin recomendaciones adicionales.'}</p>
                       </div>
                     </div>
+                  ) : (
+                    // PRINTER REPORT CONTENT
+                    printerReportData && (
+                      <div className="printer-report-container pt-2">
+                        {/* 1. TEST DE INYECTORES */}
+                        <div className="mb-6 break-inside-avoid">
+                          <h3 className="text-gray-900 font-bold uppercase text-sm border-b-2 border-gray-100 mb-4 pb-1">1. TEST DE INYECTORES</h3>
+                          <div className="grid grid-cols-5 gap-x-4 px-2">
+                            {/* Cyan Square */}
+                            <div className="flex flex-col items-center">
+                              <div className="w-14 h-14 border border-gray-200 shadow-sm relative overflow-hidden" style={{ backgroundColor: '#006192' }}>
+                                <div className="absolute inset-x-0 top-0 bg-white opacity-95 transition-all duration-1000" style={{ height: `${100 - printerReportData.cyanCoverage}%` }}></div>
+                              </div>
+                              <div className="mt-1 text-center">
+                                <span className="block text-[9px] font-medium text-gray-500 uppercase">Cyan</span>
+                                <span className="text-[10px] font-bold text-gray-900">{printerReportData.cyanCoverage}%</span>
+                              </div>
+                            </div>
+                            {/* Magenta Square */}
+                            <div className="flex flex-col items-center">
+                              <div className="w-14 h-14 border border-gray-200 shadow-sm relative overflow-hidden" style={{ backgroundColor: '#FF00FF' }}>
+                                <div className="absolute inset-x-0 top-0 bg-white opacity-95 transition-all duration-1000" style={{ height: `${100 - printerReportData.magentaCoverage}%` }}></div>
+                              </div>
+                              <div className="mt-1 text-center">
+                                <span className="block text-[9px] font-medium text-gray-500 uppercase">Mag</span>
+                                <span className="text-[10px] font-bold text-gray-900">{printerReportData.magentaCoverage}%</span>
+                              </div>
+                            </div>
+                            {/* Yellow Square */}
+                            <div className="flex flex-col items-center">
+                              <div className="w-14 h-14 border border-gray-200 shadow-sm relative overflow-hidden" style={{ backgroundColor: '#FFEF00' }}>
+                                <div className="absolute inset-x-0 top-0 bg-white opacity-95 transition-all duration-1000" style={{ height: `${100 - printerReportData.yellowCoverage}%` }}></div>
+                              </div>
+                              <div className="mt-1 text-center">
+                                <span className="block text-[9px] font-medium text-gray-500 uppercase">Yel</span>
+                                <span className="text-[10px] font-bold text-gray-900">{printerReportData.yellowCoverage}%</span>
+                              </div>
+                            </div>
+                            {/* Black Square */}
+                            <div className="flex flex-col items-center">
+                              <div className="w-14 h-14 border border-gray-200 shadow-sm relative overflow-hidden" style={{ backgroundColor: '#1A1A1A' }}>
+                                <div className="absolute inset-x-0 top-0 bg-white opacity-95 transition-all duration-1000" style={{ height: `${100 - printerReportData.blackCoverage}%` }}></div>
+                              </div>
+                              <div className="mt-1 text-center">
+                                <span className="block text-[9px] font-medium text-gray-500 uppercase">Blk</span>
+                                <span className="text-[10px] font-bold text-gray-900">{printerReportData.blackCoverage}%</span>
+                              </div>
+                            </div>
+                            {/* Gray Square */}
+                            <div className="flex flex-col items-center">
+                              <div className="w-14 h-14 border border-gray-200 shadow-sm relative overflow-hidden" style={{ backgroundColor: '#777777' }}>
+                                <div className="absolute inset-x-0 top-0 bg-white opacity-95 transition-all duration-1000" style={{ height: `${100 - printerReportData.grayPattern}%` }}></div>
+                              </div>
+                              <div className="mt-1 text-center">
+                                <span className="block text-[9px] font-medium text-gray-500 uppercase">Gris</span>
+                                <span className="text-[10px] font-bold text-gray-900">{printerReportData.grayPattern}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. PATRÓN DE CALIDAD Y ESCALA DE GRISES */}
+                        <div className="mb-6 break-inside-avoid">
+                          <h3 className="text-gray-900 font-bold uppercase text-sm border-b-2 border-gray-100 mb-4 pb-1">2. ESCALA DE GRISES Y CALIDAD</h3>
+
+                          <div className="px-6 mb-4">
+                            <p className="text-center text-[9px] text-gray-400 font-bold uppercase mb-1">Escala 0-100%</p>
+                            <div className="flex border border-gray-300">
+                              {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
+                                <div key={val} className="flex-1 text-center">
+                                  <div
+                                    className="h-6 border-r border-gray-300 last:border-0"
+                                    style={{ backgroundColor: `rgba(0,0,0,${val / 100})` }}
+                                  ></div>
+                                  <div className="text-[9px] py-0.5 border-t border-gray-300">{val}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="px-6 space-y-1">
+                            <div className="h-6 border border-gray-200 rounded-sm overflow-hidden" style={{ background: 'linear-gradient(to right, white, #00b0f0)' }}></div>
+                            <div className="h-6 border border-gray-200 rounded-sm overflow-hidden" style={{ background: 'linear-gradient(to right, white, #FF00FF)' }}></div>
+                            <div className="h-6 border border-gray-200 rounded-sm overflow-hidden" style={{ background: 'linear-gradient(to right, white, #ffff00)' }}></div>
+                            <div className="h-6 border border-gray-200 rounded-sm overflow-hidden" style={{ background: 'linear-gradient(to right, white, #000000)' }}></div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 px-2 mb-6">
+                          <div className="break-inside-avoid">
+                            <h3 className="text-gray-900 font-bold uppercase text-sm border-b border-gray-100 mb-3 pb-1">3. TEST DE ALINEACIÓN</h3>
+                            <div className="flex justify-center items-center opacity-40 space-x-8 py-2">
+                              {/* SVG/CSS Alignment Grids */}
+                              <div className="relative w-20 h-20 border border-gray-400">
+                                {[...Array(9)].map((_, i) => <div key={i} className="absolute inset-x-0 border-b border-gray-400" style={{ top: `${i * 12.5}%`, height: '0' }}></div>)}
+                                {[...Array(9)].map((_, i) => <div key={i} className="absolute inset-y-0 border-r border-gray-400" style={{ left: `${i * 12.5}%`, width: '0' }}></div>)}
+                              </div>
+                              <div className="relative w-20 h-20 border border-gray-400">
+                                {[...Array(9)].map((_, i) => <div key={i} className="absolute inset-x-0 border-b border-gray-400" style={{ top: `${i * 12.5}%`, height: '0' }}></div>)}
+                                {[...Array(9)].map((_, i) => <div key={i} className="absolute inset-y-0 border-r border-gray-400" style={{ left: `${i * 12.5}%`, width: '0' }}></div>)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="break-inside-avoid">
+                            <h3 className="text-gray-900 font-bold uppercase text-sm border-b border-gray-100 mb-3 pb-1">4. MEZCLA DE COLOR</h3>
+                            <div className="grid grid-cols-3 gap-2 px-1">
+                              {/* Orange (M+Y) */}
+                              <div className="flex flex-col items-center">
+                                <div className="w-full aspect-square border border-gray-100 shadow-sm" style={{ backgroundColor: '#f37021' }}></div>
+                                <p className="text-[9px] font-bold text-gray-400 mt-1">M+Y</p>
+                              </div>
+                              {/* Green (C+Y) */}
+                              <div className="flex flex-col items-center">
+                                <div className="w-full aspect-square border border-gray-100 shadow-sm" style={{ backgroundColor: '#00a651' }}></div>
+                                <p className="text-[9px] font-bold text-gray-400 mt-1">C+Y</p>
+                              </div>
+                              {/* Purple (C+M) */}
+                              <div className="flex flex-col items-center">
+                                <div className="w-full aspect-square border border-gray-100 shadow-sm" style={{ backgroundColor: '#662d91' }}></div>
+                                <p className="text-[9px] font-bold text-gray-400 mt-1">C+M</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* TECHNICAL NOTES & FINAL ADVICE */}
+                        <div className="break-inside-avoid border-t border-brand-200 pt-2">
+                          <h3 className="text-gray-900 font-bold uppercase text-[10px] mb-2">Observaciones Técnicas</h3>
+                          <div className="bg-gray-50 p-2 border border-gray-200 rounded min-h-[60px]">
+                            <p className="text-gray-700 whitespace-pre-wrap leading-tight text-xs italic">
+                              {printerReportData.technicianNotes || 'Sin observaciones adicionales.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )
                   )}
 
                   {/* Scope of Work (Quote Only) */}
@@ -269,6 +403,6 @@ export const PrintableDocument: React.FC<PrintableDocumentProps> = ({ mode, busi
         <p className="mb-1 whitespace-pre-wrap">{business.defaultFooter}</p>
         <p className="font-bold text-brand-700">{business.finalMessage}</p>
       </footer>
-    </div>
+    </div >
   );
 };

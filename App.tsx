@@ -4,8 +4,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { SavedDocumentsModal } from './components/SavedDocumentsModal';
 import { PrintableDocument } from './components/PrintableDocument';
 import { polishText } from './services/geminiService';
-import { BusinessSettings, QuoteData, ReportData, DocType, LineItem, PresetItem, ItemType, PresetCategory, Client } from './types';
-import { saveQuote, saveReport, getCurrentDateForInput, addDaysToDate, exportAllData, importAllData } from './utils/storage';
+import { BusinessSettings, QuoteData, ReportData, PrinterReportData, DocType, LineItem, PresetItem, ItemType, PresetCategory, Client } from './types';
+import { saveQuote, saveReport, savePrinterReport, getCurrentDateForInput, addDaysToDate, exportAllData, importAllData } from './utils/storage';
 import { v4 as uuidv4 } from 'uuid';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -102,6 +102,23 @@ const defaultReport: ReportData = {
   recommendations: ''
 };
 
+const defaultPrinterReport: PrinterReportData = {
+  id: `RP-${new Date().getFullYear()}-001`,
+  date: getCurrentDateForInput(),
+  clientName: '',
+  printerModel: '',
+  serialNumber: '',
+  finalStatus: 'LIMPIEZA DE CABEZALES REALIZADA',
+  technicianNotes: '',
+  cyanCoverage: 100,
+  magentaCoverage: 100,
+  yellowCoverage: 100,
+  blackCoverage: 100,
+  grayPattern: 100,
+  printQualityTest: 'Excelente',
+  alignment: 'Alineación Correcta'
+};
+
 const defaultPresets: PresetItem[] = [
   { id: '1', type: 'service', category: 'computacion', description: 'Diagnóstico Técnico PC', unitPrice: 15000 },
   { id: '2', type: 'service', category: 'computacion', description: 'Formateo e Instalación de SO', unitPrice: 35000 },
@@ -111,7 +128,7 @@ const defaultPresets: PresetItem[] = [
   { id: '6', type: 'material', category: 'electricidad', description: 'Cable 2.5mm (Rollo)', unitPrice: 45000 },
 ];
 
-const getNextId = async (type: 'quote' | 'report') => {
+const getNextId = async (type: 'quote' | 'report' | 'printer-report') => {
   let docs: any[] = [];
 
   // Try Electron first
@@ -128,24 +145,28 @@ const getNextId = async (type: 'quote' | 'report') => {
 
   // Fallback to LocalStorage if Electron returned nothing or failed
   if (docs.length === 0) {
-    const key = type === 'quote' ? 'saved_quotes' : 'saved_reports';
+    const key = type === 'quote' ? 'saved_quotes' : (type === 'report' ? 'saved_reports' : 'saved_printer_reports');
     const saved = localStorage.getItem(key);
     if (saved) {
       docs = JSON.parse(saved);
     }
   } else {
     // Filter Electron docs by type
-    docs = docs.filter((d: any) => type === 'quote' ? ('items' in d) : !('items' in d));
+    docs = docs.filter((d: any) => {
+      if (type === 'quote') return 'items' in d;
+      if (type === 'printer-report') return 'printerModel' in d;
+      return !('items' in d) && !('printerModel' in d);
+    });
   }
 
   const currentYear = new Date().getFullYear();
-  const prefix = type === 'quote' ? 'P' : 'IT';
+  const prefix = type === 'quote' ? 'P' : (type === 'report' ? 'IT' : 'RP');
   const yearPrefix = `${prefix}-${currentYear}-`;
 
   let maxNum = 0;
   docs.forEach((doc: any) => {
     if (doc.id && doc.id.startsWith(yearPrefix)) {
-      const parts = doc.id.split('-'); // e.g., P-2024-001
+      const parts = doc.id.split('-');
       if (parts.length === 3) {
         const num = parseInt(parts[2], 10);
         if (!isNaN(num) && num > maxNum) {
@@ -166,18 +187,6 @@ const App: React.FC = () => {
   const [showClients, setShowClients] = useState(false);
   const [showProductsManager, setShowProductsManager] = useState(false);
 
-  // Initialize IDs on Load
-  useEffect(() => {
-    const initIds = async () => {
-      const nextQuoteId = await getNextId('quote');
-      setQuote(prev => prev.id === defaultQuote.id ? { ...prev, id: nextQuoteId } : prev);
-
-      const nextReportId = await getNextId('report');
-      setReport(prev => prev.id === defaultReport.id ? { ...prev, id: nextReportId } : prev);
-    };
-    initIds();
-  }, []);
-
   const [business, setBusiness] = useState<BusinessSettings>(() => {
     const saved = localStorage.getItem('businessSettings');
     const parsed = saved ? JSON.parse(saved) : defaultBusiness;
@@ -186,6 +195,48 @@ const App: React.FC = () => {
 
   const [quote, setQuote] = useState<QuoteData>(defaultQuote);
   const [report, setReport] = useState<ReportData>(defaultReport);
+  const [printerReport, setPrinterReport] = useState<PrinterReportData>(defaultPrinterReport);
+
+  const [previewQuote, setPreviewQuote] = useState<QuoteData>(quote);
+  const [previewReport, setPreviewReport] = useState<ReportData>(report);
+  const [previewPrinterReport, setPreviewPrinterReport] = useState<PrinterReportData>(printerReport);
+
+  // Sync Preview with real state after 500ms of inactivity
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPreviewQuote(quote);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [quote]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPreviewReport(report);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [report]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPreviewPrinterReport(printerReport);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [printerReport]);
+
+  // Initialize IDs on Load
+  useEffect(() => {
+    const initIds = async () => {
+      const nextQuoteId = await getNextId('quote');
+      setQuote(prev => prev.id === defaultQuote.id ? { ...prev, id: nextQuoteId } : prev);
+
+      const nextReportId = await getNextId('report');
+      setReport(prev => prev.id === defaultReport.id ? { ...prev, id: nextReportId } : prev);
+
+      const nextPrinterReportId = await getNextId('printer-report');
+      setPrinterReport(prev => prev.id === defaultPrinterReport.id ? { ...prev, id: nextPrinterReportId } : prev);
+    };
+    initIds();
+  }, []);
 
   // Presets State
   const [presets, setPresets] = useState<PresetItem[]>(() => {
@@ -373,29 +424,29 @@ const App: React.FC = () => {
   }, []);
 
   // --- HANDLERS ---
-  // --- HANDLERS ---
   const handlePrint = async () => {
     // Lock document before printing
     if (mode === 'quote') {
       const lockedQuote = { ...quote, locked: true };
       setQuote(lockedQuote);
-      await saveQuote(lockedQuote); // Save locally
-      // We really should trigger the full saveDocument flow to sync to electron, but this is simpler for now
-      // Let's create a helper or just call the sync logic manually if needed.
-      // Actually, handleSaveDocument uses state 'quote', which might not be updated yet due to closure.
-      // Best to use the local variable.
-    } else {
+      await saveQuote(lockedQuote);
+    } else if (mode === 'report') {
       const lockedReport = { ...report, locked: true };
       setReport(lockedReport);
       await saveReport(lockedReport);
+    } else if (mode === 'printer-report') {
+      const lockedPrinterReport = { ...printerReport, locked: true };
+      setPrinterReport(lockedPrinterReport);
+      await savePrinterReport(lockedPrinterReport);
     }
 
-    // Sync to electron (Copy-paste logic from handleSaveDocument for now to ensure consistency)
+    // Sync to electron
     if (window.electronAPI?.saveDocuments) {
       try {
         const allQuotes = JSON.parse(localStorage.getItem('saved_quotes') || '[]');
         const allReports = JSON.parse(localStorage.getItem('saved_reports') || '[]');
-        const allDocs = [...allQuotes, ...allReports];
+        const allPrinterReports = JSON.parse(localStorage.getItem('saved_printer_reports') || '[]');
+        const allDocs = [...allQuotes, ...allReports, ...allPrinterReports];
         await window.electronAPI.saveDocuments(allDocs);
       } catch (error) { console.error(error); }
     }
@@ -407,7 +458,10 @@ const App: React.FC = () => {
   };
 
   const handleDownloadPDF = async () => {
-    const filename = `${mode === 'quote' ? 'Presupuesto' : 'Informe'}_${mode === 'quote' ? quote.id : report.id}.pdf`;
+    let filename = '';
+    if (mode === 'quote') filename = `Presupuesto_${quote.id}.pdf`;
+    else if (mode === 'report') filename = `Informe_${report.id}.pdf`;
+    else if (mode === 'printer-report') filename = `Reporte_Impresora_${printerReport.id}.pdf`;
 
     // 1. ELECTRON NATIVE PDF (Best Quality)
     if (window.electronAPI?.savePdf) {
@@ -416,21 +470,18 @@ const App: React.FC = () => {
         const lockedQuote = { ...quote, locked: true };
         setQuote(lockedQuote);
         await saveQuote(lockedQuote);
-      } else {
+      } else if (mode === 'report') {
         const lockedReport = { ...report, locked: true };
         setReport(lockedReport);
         await saveReport(lockedReport);
+      } else if (mode === 'printer-report') {
+        const lockedPrinterReport = { ...printerReport, locked: true };
+        setPrinterReport(lockedPrinterReport);
+        await savePrinterReport(lockedPrinterReport);
       }
 
       // Small delay to ensure Portal/CSS is fully stable before capture
       await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Debug: Verify portal has content
-      const printRoot = document.getElementById('print-root');
-      if (!printRoot || !printRoot.innerHTML) {
-        alert('⚠️ Error: Contenido de impresión no encontrado. Intenta de nuevo.');
-        return;
-      }
 
       const result = await window.electronAPI.savePdf(filename, '');
 
@@ -439,7 +490,8 @@ const App: React.FC = () => {
         if (window.electronAPI?.saveDocuments) {
           const allQuotes = JSON.parse(localStorage.getItem('saved_quotes') || '[]');
           const allReports = JSON.parse(localStorage.getItem('saved_reports') || '[]');
-          const allDocs = [...allQuotes, ...allReports];
+          const allPrinterReports = JSON.parse(localStorage.getItem('saved_printer_reports') || '[]');
+          const allDocs = [...allQuotes, ...allReports, ...allPrinterReports];
           window.electronAPI.saveDocuments(allDocs);
         }
         alert('✅ PDF Guardado exitosamente');
@@ -499,26 +551,26 @@ const App: React.FC = () => {
         const lockedQuote = { ...quote, locked: true };
         setQuote(lockedQuote);
         saveQuote(lockedQuote);
-      } else {
+      } else if (mode === 'report') {
         const lockedReport = { ...report, locked: true };
         setReport(lockedReport);
         saveReport(lockedReport);
+      } else if (mode === 'printer-report') {
+        const lockedPrinterReport = { ...printerReport, locked: true };
+        setPrinterReport(lockedPrinterReport);
+        savePrinterReport(lockedPrinterReport);
       }
 
       // Sync (fire and forget)
       if (window.electronAPI?.saveDocuments) {
-        // Read fresh from storage since saveQuote updated it
         const allQuotes = JSON.parse(localStorage.getItem('saved_quotes') || '[]');
         const allReports = JSON.parse(localStorage.getItem('saved_reports') || '[]');
-        const allDocs = [...allQuotes, ...allReports];
+        const allPrinterReports = JSON.parse(localStorage.getItem('saved_printer_reports') || '[]');
+        const allDocs = [...allQuotes, ...allReports, ...allPrinterReports];
         window.electronAPI.saveDocuments(allDocs);
       }
     });
   };
-
-
-
-
 
   // Item Handlers
   const handleAddItem = (type: ItemType) => {
@@ -586,22 +638,29 @@ const App: React.FC = () => {
       }
       saveQuote(quote);
       alert('✅ Presupuesto guardado exitosamente');
-    } else {
+    } else if (mode === 'report') {
       if (report.locked) {
         alert('🔒 Error: No se puede guardar cambios en un informe finalizado.');
         return;
       }
       saveReport(report);
       alert('✅ Informe guardado exitosamente');
+    } else if (mode === 'printer-report') {
+      if (printerReport.locked) {
+        alert('🔒 Error: No se puede guardar cambios en un reporte finalizado.');
+        return;
+      }
+      savePrinterReport(printerReport);
+      alert('✅ Reporte de impresora guardado exitosamente');
     }
 
-    // Sync to Electron File System (for ClientsManager history)
+    // Sync to Electron File System
     if (window.electronAPI?.saveDocuments) {
       try {
-        // We read raw from localStorage to get the full list including the one just saved
         const allQuotes = JSON.parse(localStorage.getItem('saved_quotes') || '[]');
         const allReports = JSON.parse(localStorage.getItem('saved_reports') || '[]');
-        const allDocs = [...allQuotes, ...allReports];
+        const allPrinterReports = JSON.parse(localStorage.getItem('saved_printer_reports') || '[]');
+        const allDocs = [...allQuotes, ...allReports, ...allPrinterReports];
         await window.electronAPI.saveDocuments(allDocs);
       } catch (error) {
         console.error("Error syncing documents to Electron:", error);
@@ -609,17 +668,16 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLoadDocument = async (doc: QuoteData | ReportData) => {
-    // Determine type based on properties (duck typing)
+  const handleLoadDocument = async (doc: QuoteData | ReportData | PrinterReportData) => {
+    // Determine type based on properties
     const isQuote = 'items' in doc;
-    const type = isQuote ? 'quote' : 'report';
+    const isPrinterReport = 'printerModel' in doc;
+    const type = isQuote ? 'quote' : (isPrinterReport ? 'printer-report' : 'report');
 
-    // SECURITY CHECK: Re-fetch the document from storage to check its REAL locked status.
-    // The 'doc' passed from UI might be stale because ClientsManager list isn't auto-refreshed instantly after print.
     let isLocked = doc.locked;
 
     // Check local storage for the authoritative status
-    const key = isQuote ? 'saved_quotes' : 'saved_reports';
+    const key = isQuote ? 'saved_quotes' : (isPrinterReport ? 'saved_printer_reports' : 'saved_reports');
     const savedDocs = JSON.parse(localStorage.getItem(key) || '[]');
     const freshDoc = savedDocs.find((d: any) => d.id === doc.id);
 
@@ -627,10 +685,7 @@ const App: React.FC = () => {
       isLocked = true;
     }
 
-    // If locked, we clone it as a NEW document
-    // (User requirement: finalized docs cannot be modified, must create new)
     if (isLocked) {
-      // User Choice: View as Read-Only OR Create New Copy (Template)
       const userChoice = window.confirm(
         `Este documento está FINALIZADO (Bloqueado).\n\n` +
         `• ACEPTAR: Crear una COPIA NUEVA para editar (usar como plantilla).\n` +
@@ -638,51 +693,42 @@ const App: React.FC = () => {
       );
 
       if (userChoice) {
-        // CREATE COPY (Template Mode)
         const nextId = await getNextId(type);
-
         if (isQuote) {
           setMode('quote');
-          const sourceDoc = (freshDoc || doc) as QuoteData;
-          setQuote({
-            ...sourceDoc,
-            id: nextId,
-            date: getCurrentDateForInput(),
-            locked: false // New copy is unlocked
-          });
+          setQuote({ ...(freshDoc || doc) as QuoteData, id: nextId, date: getCurrentDateForInput(), locked: false });
+        } else if (isPrinterReport) {
+          setMode('printer-report');
+          setPrinterReport({ ...(freshDoc || doc) as PrinterReportData, id: nextId, date: getCurrentDateForInput(), locked: false });
         } else {
           setMode('report');
-          const sourceDoc = (freshDoc || doc) as ReportData;
-          setReport({
-            ...sourceDoc,
-            id: nextId,
-            date: getCurrentDateForInput(),
-            locked: false // New copy is unlocked
-          });
+          setReport({ ...(freshDoc || doc) as ReportData, id: nextId, date: getCurrentDateForInput(), locked: false });
         }
       } else {
-        // READ ONLY MODE
         if (isQuote) {
           setMode('quote');
           setQuote((freshDoc || doc) as QuoteData);
+        } else if (isPrinterReport) {
+          setMode('printer-report');
+          setPrinterReport((freshDoc || doc) as PrinterReportData);
         } else {
           setMode('report');
           setReport((freshDoc || doc) as ReportData);
         }
       }
     } else {
-      // Normal Draft Load - Editable in place
-      // (Even here, we should prefer the fresh doc if found to ensure we have latest edits)
       if (isQuote) {
         setMode('quote');
         setQuote((freshDoc || doc) as QuoteData);
+      } else if (isPrinterReport) {
+        setMode('printer-report');
+        setPrinterReport((freshDoc || doc) as PrinterReportData);
       } else {
         setMode('report');
         setReport((freshDoc || doc) as ReportData);
       }
     }
 
-    // UI Cleanup
     setShowSavedDocs(false);
     setShowClients(false);
   };
@@ -698,9 +744,15 @@ const App: React.FC = () => {
         validUntil: addDaysToDate(getCurrentDateForInput(), 15),
         items: [{ id: generateId(), type: 'service', description: 'Servicio Técnico PC (Diagnóstico)', quantity: 1, unitPrice: 0 }]
       });
-    } else {
+    } else if (mode === 'report') {
       setReport({
         ...defaultReport,
+        id: nextId,
+        date: getCurrentDateForInput()
+      });
+    } else if (mode === 'printer-report') {
+      setPrinterReport({
+        ...defaultPrinterReport,
         id: nextId,
         date: getCurrentDateForInput()
       });
@@ -909,23 +961,7 @@ const App: React.FC = () => {
   // This prevents the heavy PDF preview component from re-rendering on every single keystroke,
   // which was causing the UI to freeze/lag when typing notes or searching clients.
 
-  const [previewQuote, setPreviewQuote] = useState<QuoteData>(quote);
-  const [previewReport, setPreviewReport] = useState<ReportData>(report);
-
-  // Sync Preview with real state after 500ms of inactivity
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPreviewQuote(quote);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [quote]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPreviewReport(report);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [report]);
+  // Determine which data to pass to preview based on mode
 
 
   // Determine which data to pass to preview based on mode
@@ -973,8 +1009,11 @@ const App: React.FC = () => {
             if ('items' in doc) {
               setMode('quote');
               setQuote(doc as QuoteData);
-              // Update preview immediately on load (no delay needed)
               setPreviewQuote(doc as QuoteData);
+            } else if ('printerModel' in doc) {
+              setMode('printer-report');
+              setPrinterReport(doc as PrinterReportData);
+              setPreviewPrinterReport(doc as PrinterReportData);
             } else {
               setMode('report');
               setReport(doc as ReportData);
@@ -1033,6 +1072,12 @@ const App: React.FC = () => {
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'report' ? 'bg-brand-600 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`}
               >
                 <i className="fas fa-clipboard-check mr-2"></i>Informes
+              </button>
+              <button
+                onClick={() => setMode('printer-report')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'printer-report' ? 'bg-brand-600 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`}
+              >
+                <i className="fas fa-print mr-2"></i>Reporte Impresora
               </button>
               <div className="h-6 w-px bg-gray-700 mx-2"></div>
 
@@ -1353,28 +1398,33 @@ const App: React.FC = () => {
                 </div>
 
               </div>
-            ) : (
+            ) : mode === 'report' ? (
               // REPORT FORM
               <div className="space-y-4">
+                {/* ... existing report form ... */}
+              </div>
+            ) : (
+              // PRINTER REPORT FORM
+              <div className="space-y-4">
                 {/* Locked Banner */}
-                {report.locked && (
+                {printerReport.locked && (
                   <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-3 rounded shadow-sm flex items-center gap-3 animate-pulse">
                     <i className="fas fa-lock text-xl"></i>
                     <div>
                       <p className="font-bold text-sm">Bloqueado para Edición</p>
-                      <p className="text-[10px]">Este informe ya fue finalizado/emitido.</p>
+                      <p className="text-[10px]">Este reporte ya fue finalizado/emitido.</p>
                     </div>
                   </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">Nº Informe</label>
-                    <input type="text" value={report.id} onChange={(e) => setReport({ ...report, id: e.target.value })} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm ${report.locked ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white'}`} disabled={report.locked} />
+                    <label className="block text-xs font-medium text-gray-700">Nº Reporte</label>
+                    <input type="text" value={printerReport.id} onChange={(e) => setPrinterReport({ ...printerReport, id: e.target.value })} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm ${printerReport.locked ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white'}`} disabled={printerReport.locked} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700">Fecha</label>
-                    <input type="date" value={report.date} onChange={(e) => setReport({ ...report, date: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                    <input type="date" value={printerReport.date} onChange={(e) => setPrinterReport({ ...printerReport, date: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                   </div>
                 </div>
 
@@ -1384,20 +1434,25 @@ const App: React.FC = () => {
                     <DebouncedInput
                       type="text"
                       placeholder="Nombre del Cliente"
-                      value={report.clientName}
-                      onDebouncedChange={(val) => handleClientInputChange(val)}
+                      value={printerReport.clientName}
+                      onDebouncedChange={(val) => {
+                        setPrinterReport({ ...printerReport, clientName: val });
+                      }}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
                       onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-                      onFocus={() => report.clientName && handleClientInputChange(report.clientName)}
+                      onFocus={() => printerReport.clientName && handleClientInputChange(printerReport.clientName)}
                       autoComplete="off"
                     />
-                    {showClientSuggestions && mode === 'report' && clientSuggestions.length > 0 && (
+                    {showClientSuggestions && mode === 'printer-report' && clientSuggestions.length > 0 && (
                       <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto mt-1">
                         {clientSuggestions.map(client => (
                           <div
                             key={client.id}
                             className="p-2 hover:bg-gray-100 cursor-pointer text-sm border-b last:border-0"
-                            onMouseDown={() => handleSelectClient(client)}
+                            onMouseDown={() => {
+                              setPrinterReport({ ...printerReport, clientName: client.name });
+                              setShowClientSuggestions(false);
+                            }}
                           >
                             <div className="font-bold text-gray-800">{client.name}</div>
                             {client.taxId && <div className="text-xs text-gray-500">{client.taxId}</div>}
@@ -1410,86 +1465,78 @@ const App: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">Equipo</label>
-                    <input type="text" placeholder="Ej: Notebook Dell" value={report.deviceType} onChange={(e) => setReport({ ...report, deviceType: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                    <label className="block text-xs font-medium text-gray-700">Modelo de Impresora</label>
+                    <input type="text" placeholder="Ej: EPSON L475" value={printerReport.printerModel} onChange={(e) => setPrinterReport({ ...printerReport, printerModel: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">Nº Serie (S/N)</label>
-                    <input type="text" value={report.serialNumber || ''} onChange={(e) => setReport({ ...report, serialNumber: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                    <label className="block text-xs font-medium text-gray-700">Nº Serie</label>
+                    <input type="text" value={printerReport.serialNumber || ''} onChange={(e) => setPrinterReport({ ...printerReport, serialNumber: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 flex justify-between">
-                    <span>Problema Reportado (Falla)</span>
-                    <button
-                      onClick={() => improveText(report.reportedIssue, 'technical_issue', (val) => setReport({ ...report, reportedIssue: val }), setIsImprovingReportIssue)}
-                      className="text-brand-600 hover:text-brand-800 text-xs flex items-center"
-                      disabled={isImprovingReportIssue}
-                    >
-                      <i className={`fas fa-magic mr-1 ${isImprovingReportIssue ? 'animate-spin' : ''}`}></i>
-                      Mejorar
-                    </button>
-                  </label>
-                  <DebouncedTextarea rows={3} value={report.reportedIssue} onDebouncedChange={(val) => setReport({ ...report, reportedIssue: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
+                <div className="bg-gray-50 p-3 rounded-md border border-gray-200">
+                  <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Test de Inyectores (% Cobertura)</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-cyan-600 uppercase">Cyan</label>
+                      <input type="range" min="0" max="100" value={printerReport.cyanCoverage} onChange={(e) => setPrinterReport({ ...printerReport, cyanCoverage: parseInt(e.target.value) })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                      <div className="text-right text-[10px] font-mono">{printerReport.cyanCoverage}%</div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-magenta-600 uppercase">Magenta</label>
+                      <input type="range" min="0" max="100" value={printerReport.magentaCoverage} onChange={(e) => setPrinterReport({ ...printerReport, magentaCoverage: parseInt(e.target.value) })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-magenta-500" />
+                      <div className="text-right text-[10px] font-mono">{printerReport.magentaCoverage}%</div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-yellow-600 uppercase">Yellow</label>
+                      <input type="range" min="0" max="100" value={printerReport.yellowCoverage} onChange={(e) => setPrinterReport({ ...printerReport, yellowCoverage: parseInt(e.target.value) })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-yellow-500" />
+                      <div className="text-right text-[10px] font-mono">{printerReport.yellowCoverage}%</div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-900 uppercase">Black</label>
+                      <input type="range" min="0" max="100" value={printerReport.blackCoverage} onChange={(e) => setPrinterReport({ ...printerReport, blackCoverage: parseInt(e.target.value) })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black" />
+                      <div className="text-right text-[10px] font-mono">{printerReport.blackCoverage}%</div>
+                    </div>
+                    <div className="col-span-2 mt-1 pt-1 border-t border-gray-100">
+                      <label className="block text-[10px] font-bold text-gray-600 uppercase">Patrón de Grises</label>
+                      <input type="range" min="0" max="100" value={printerReport.grayPattern} onChange={(e) => setPrinterReport({ ...printerReport, grayPattern: parseInt(e.target.value) })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600" />
+                      <div className="text-right text-[10px] font-mono">{printerReport.grayPattern}%</div>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 flex justify-between">
-                    <span>Diagnóstico Técnico</span>
-                    <button
-                      onClick={() => improveText(report.diagnosis, 'technical_diagnosis', (val) => setReport({ ...report, diagnosis: val }), setIsImprovingDiagnosis)}
-                      className="text-brand-600 hover:text-brand-800 text-xs flex items-center"
-                      disabled={isImprovingDiagnosis}
-                    >
-                      <i className={`fas fa-magic mr-1 ${isImprovingDiagnosis ? 'animate-spin' : ''}`}></i>
-                      Mejorar
-                    </button>
-                  </label>
-                  <DebouncedTextarea rows={4} value={report.diagnosis} onDebouncedChange={(val) => setReport({ ...report, diagnosis: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 flex justify-between">
-                    <span>Trabajo Realizado / Materiales</span>
-                    <button
-                      onClick={() => improveText(report.workPerformed, 'work_report', (val) => setReport({ ...report, workPerformed: val }), setIsImprovingWorkPerformed)}
-                      className="text-brand-600 hover:text-brand-800 text-xs flex items-center"
-                      disabled={isImprovingWorkPerformed}
-                    >
-                      <i className={`fas fa-magic mr-1 ${isImprovingWorkPerformed ? 'animate-spin' : ''}`}></i>
-                      Mejorar
-                    </button>
-                  </label>
-                  <DebouncedTextarea rows={4} value={report.workPerformed} onDebouncedChange={(val) => setReport({ ...report, workPerformed: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700">Recomendaciones</label>
-                  <DebouncedTextarea
-                    rows={2}
-                    value={report.recommendations || ''}
-                    onDebouncedChange={(val) => setReport({ ...report, recommendations: val })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
-                    placeholder="Sugerencias para el cliente..."
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="pt-2">
+                    <label className="block text-xs font-medium text-gray-700">Test de Calidad</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Excelente"
+                      value={printerReport.printQualityTest}
+                      onChange={(e) => setPrinterReport({ ...printerReport, printQualityTest: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
+                    />
+                  </div>
+                  <div className="pt-2">
+                    <label className="block text-xs font-medium text-gray-700">Alineación</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Correcta"
+                      value={printerReport.alignment}
+                      onChange={(e) => setPrinterReport({ ...printerReport, alignment: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white"
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-gray-700">Estado Final</label>
-                  <select
-                    value={report.status}
-                    onChange={(e) => setReport({ ...report, status: e.target.value as any })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white font-medium"
-                  >
-                    <option value="En Revisión">En Revisión</option>
-                    <option value="Pendiente de Repuesto">Pendiente de Repuesto</option>
-                    <option value="Reparado">Reparado</option>
-                    <option value="Sin Solución">Sin Solución</option>
-                    <option value="Entregado">Entregado</option>
-                  </select>
+                  <input type="text" placeholder="Ej: LIMPIEZA DE CABEZALES REALIZADA" value={printerReport.finalStatus} onChange={(e) => setPrinterReport({ ...printerReport, finalStatus: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-gray-700">Notas del Técnico</label>
+                  <DebouncedTextarea rows={3} value={printerReport.technicianNotes} onDebouncedChange={(val) => setPrinterReport({ ...printerReport, technicianNotes: val })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-sm bg-white" placeholder="Observaciones técnicas..." />
+                </div>
               </div>
             )}
           </div>
@@ -1521,6 +1568,7 @@ const App: React.FC = () => {
               business={business}
               quoteData={previewQuote}
               reportData={previewReport}
+              printerReportData={previewPrinterReport}
             />
           </div>
         </section>
@@ -1538,6 +1586,7 @@ const App: React.FC = () => {
             business={business}
             quoteData={previewQuote}
             reportData={previewReport}
+            printerReportData={previewPrinterReport}
           />
         </div>,
         document.getElementById('print-root')!
